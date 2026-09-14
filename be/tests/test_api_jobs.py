@@ -10,7 +10,7 @@ START_ISO = "2027-01-15T08:00:00Z"
 
 
 def register(client: TestClient, worker_id: str = "w1") -> None:
-    client.put(f"/api/workers/{worker_id}", json={"name": worker_id, "concurrent_limit": 1})
+    client.put(f"/api/workers/{worker_id}", json={"name": worker_id, "concurrentLimit": 1})
 
 
 def create(client: TestClient, **fields: Any) -> Any:
@@ -20,7 +20,7 @@ def create(client: TestClient, **fields: Any) -> Any:
 
 
 def claim(client: TestClient, worker_id: str = "w1") -> Any:
-    resp = client.post("/api/jobs/claim", json={"worker_id": worker_id, "type": "t"})
+    resp = client.post("/api/jobs/claim", json={"workerId": worker_id, "type": "t"})
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data is not None
@@ -28,7 +28,7 @@ def claim(client: TestClient, worker_id: str = "w1") -> Any:
 
 
 def lease_body(claimed: Any) -> dict[str, Any]:
-    return {"worker_id": claimed["job"]["worker_id"], "lease_token": claimed["lease_token"]}
+    return {"workerId": claimed["job"]["workerId"], "leaseToken": claimed["leaseToken"]}
 
 
 def error_code(resp: Any) -> Any:
@@ -39,13 +39,13 @@ def test_create_job_returns_201_with_defaults(client: TestClient, settings: Sett
     job = create(client)
     assert job["status"] == "pending"
     assert job["description"] == {"n": 1}
-    assert job["max_attempt"] == settings.default_max_attempt
-    assert job["max_run_ms"] == settings.default_max_run_ms
+    assert job["maxAttempt"] == settings.default_max_attempt
+    assert job["maxRunMs"] == settings.default_max_run_ms
     assert job["priority"] == 0
     assert job["attempt"] == 0
-    assert job["worker_id"] is None
-    assert job["lease_until"] is None
-    assert job["available_at"] == START_ISO
+    assert job["workerId"] is None
+    assert job["leaseUntil"] is None
+    assert job["availableAt"] == START_ISO
     assert job["result"] is None
 
 
@@ -54,9 +54,9 @@ def test_create_job_returns_201_with_defaults(client: TestClient, settings: Sett
     [
         {"type": "", "description": {}},
         {"type": "t"},
-        {"type": "t", "description": {}, "max_attempt": 0},
-        {"type": "t", "description": {}, "max_attempt": 101},
-        {"type": "t", "description": {}, "max_run_ms": 86_400_001},
+        {"type": "t", "description": {}, "maxAttempt": 0},
+        {"type": "t", "description": {}, "maxAttempt": 101},
+        {"type": "t", "description": {}, "maxRunMs": 86_400_001},
         {"type": "t", "description": {}, "priority": 2**31},
     ],
 )
@@ -79,11 +79,11 @@ def test_get_job_includes_attempts_but_never_the_token(client: TestClient) -> No
     resp = client.get(f"/api/jobs/{claimed['job']['id']}")
     data = resp.json()["data"]
     assert data["job"]["status"] == "running"
-    assert data["job"]["worker_id"] == "w1"
-    assert [(a["attempt_no"], a["worker_id"], a["outcome"]) for a in data["attempts"]] == [
+    assert data["job"]["workerId"] == "w1"
+    assert [(a["attemptNo"], a["workerId"], a["outcome"]) for a in data["attempts"]] == [
         (1, "w1", None),
     ]
-    assert claimed["lease_token"] not in resp.text
+    assert claimed["leaseToken"] not in resp.text
 
 
 def test_get_unknown_job(client: TestClient) -> None:
@@ -105,17 +105,17 @@ def test_claim_returns_job_and_lease(client: TestClient, settings: Settings) -> 
     register(client)
     create(client)
     claimed = claim(client)
-    assert isinstance(claimed["lease_token"], str)
-    assert claimed["lease_ms_remaining"] == settings.job_lease_ms
-    assert claimed["lease_until"] == "2027-01-15T08:00:30Z"
-    assert claimed["deadline_at"] == "2027-01-16T08:00:00Z"
+    assert isinstance(claimed["leaseToken"], str)
+    assert claimed["leaseMsRemaining"] == settings.job_lease_ms
+    assert claimed["leaseUntil"] == "2027-01-15T08:00:30Z"
+    assert claimed["deadlineAt"] == "2027-01-16T08:00:00Z"
     assert claimed["job"]["status"] == "running"
     assert claimed["job"]["attempt"] == 1
 
 
 def test_claim_with_no_job_returns_null_data(client: TestClient) -> None:
     register(client)
-    resp = client.post("/api/jobs/claim", json={"worker_id": "w1", "type": "t"})
+    resp = client.post("/api/jobs/claim", json={"workerId": "w1", "type": "t"})
     assert resp.status_code == 200
     assert resp.json() == {"ok": True, "data": None}
 
@@ -126,7 +126,7 @@ def test_claim_with_expired_worker_lease(
     register(client)
     clock.advance(settings.worker_lease_ms)
     create(client)
-    resp = client.post("/api/jobs/claim", json={"worker_id": "w1", "type": "t"})
+    resp = client.post("/api/jobs/claim", json={"workerId": "w1", "type": "t"})
     assert resp.status_code == 409
     assert error_code(resp) == "WORKER_LEASE_EXPIRED"
 
@@ -142,12 +142,12 @@ def test_job_heartbeat_extends_and_rejects_wrong_token(
     resp = client.post(f"/api/jobs/{job_id}/heartbeat", json=lease_body(claimed))
     assert resp.status_code == 200
     assert resp.json()["data"] == {
-        "lease_until": "2027-01-15T08:00:40Z",
-        "lease_ms_remaining": settings.job_lease_ms,
-        "deadline_at": "2027-01-16T08:00:00Z",
+        "leaseUntil": "2027-01-15T08:00:40Z",
+        "leaseMsRemaining": settings.job_lease_ms,
+        "deadlineAt": "2027-01-16T08:00:00Z",
     }
     wrong = client.post(
-        f"/api/jobs/{job_id}/heartbeat", json={"worker_id": "w1", "lease_token": "wrong"}
+        f"/api/jobs/{job_id}/heartbeat", json={"workerId": "w1", "leaseToken": "wrong"}
     )
     assert wrong.status_code == 409
     assert error_code(wrong) == "LEASE_REJECTED"
@@ -231,7 +231,7 @@ def test_finish_success_rejects_non_finite_float_in_result(client: TestClient) -
     resp = client.post(
         f"/api/jobs/{claimed['job']['id']}/finish",
         content=(
-            f'{{"worker_id":"{body["worker_id"]}","lease_token":"{body["lease_token"]}",'
+            f'{{"workerId":"{body["workerId"]}","leaseToken":"{body["leaseToken"]}",'
             '"status":"success","result":[Infinity]}'
         ),
         headers={"content-type": "application/json"},

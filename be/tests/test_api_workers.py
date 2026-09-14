@@ -9,7 +9,7 @@ START_ISO = "2027-01-15T08:00:00Z"
 
 
 def test_register_worker_returns_envelope(client: TestClient, settings: Settings) -> None:
-    resp = client.put("/api/workers/w1", json={"name": "alpha", "concurrent_limit": 4})
+    resp = client.put("/api/workers/w1", json={"name": "alpha", "concurrentLimit": 4})
     assert resp.status_code == 200
     assert resp.json() == {
         "ok": True,
@@ -17,18 +17,18 @@ def test_register_worker_returns_envelope(client: TestClient, settings: Settings
             "id": "w1",
             "name": "alpha",
             "ip": "testclient",
-            "concurrent_limit": 4,
-            "connected_at": START_ISO,
-            "last_seen_at": START_ISO,
-            "lease_until": "2027-01-15T08:00:30Z",
-            "lease_ms_remaining": settings.worker_lease_ms,
+            "concurrentLimit": 4,
+            "connectedAt": START_ISO,
+            "lastSeenAt": START_ISO,
+            "leaseUntil": "2027-01-15T08:00:30Z",
+            "leaseMsRemaining": settings.worker_lease_ms,
             "connected": True,
         },
     }
 
 
 def test_register_worker_validation_error(client: TestClient) -> None:
-    resp = client.put("/api/workers/w1", json={"name": "", "concurrent_limit": 0})
+    resp = client.put("/api/workers/w1", json={"name": "", "concurrentLimit": 0})
     assert resp.status_code == 422
     body = resp.json()
     assert body["ok"] is False
@@ -37,19 +37,19 @@ def test_register_worker_validation_error(client: TestClient) -> None:
 
 
 def test_register_worker_rejects_out_of_range_concurrent_limit(client: TestClient) -> None:
-    resp = client.put("/api/workers/w1", json={"name": "a", "concurrent_limit": 2**63})
+    resp = client.put("/api/workers/w1", json={"name": "a", "concurrentLimit": 2**63})
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_worker_heartbeat_extends_lease(client: TestClient, clock: FakeClock) -> None:
-    client.put("/api/workers/w1", json={"name": "alpha", "concurrent_limit": 1})
+    client.put("/api/workers/w1", json={"name": "alpha", "concurrentLimit": 1})
     clock.advance(10_000)
     resp = client.post("/api/workers/w1/heartbeat")
     assert resp.status_code == 200
     assert resp.json() == {
         "ok": True,
-        "data": {"lease_until": "2027-01-15T08:00:40Z", "lease_ms_remaining": 30_000},
+        "data": {"leaseUntil": "2027-01-15T08:00:40Z", "leaseMsRemaining": 30_000},
     }
 
 
@@ -69,11 +69,11 @@ def test_worker_heartbeat_unknown_worker(client: TestClient) -> None:
 def test_list_workers_reports_connection(
     client: TestClient, clock: FakeClock, settings: Settings
 ) -> None:
-    client.put("/api/workers/w1", json={"name": "a", "concurrent_limit": 1})
+    client.put("/api/workers/w1", json={"name": "a", "concurrentLimit": 1})
     clock.advance(settings.worker_lease_ms)
-    client.put("/api/workers/w2", json={"name": "b", "concurrent_limit": 1})
+    client.put("/api/workers/w2", json={"name": "b", "concurrentLimit": 1})
     data = client.get("/api/workers").json()["data"]
-    assert [(w["id"], w["connected"], w["lease_ms_remaining"]) for w in data] == [
+    assert [(w["id"], w["connected"], w["leaseMsRemaining"]) for w in data] == [
         ("w1", False, 0),
         ("w2", True, settings.worker_lease_ms),
     ]

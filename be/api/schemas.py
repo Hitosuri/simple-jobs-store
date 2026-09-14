@@ -5,6 +5,7 @@ from typing import Annotated, Literal, Self
 
 from fastapi import Body
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic.alias_generators import to_camel
 
 from domain import (
     Attempt,
@@ -31,14 +32,22 @@ def _remaining(until: int, now: int) -> int:
     return max(until - now, 0)
 
 
-class WorkerRegisterBody(BaseModel):
+class CamelModel(BaseModel):
+    """Base for API models: camelCase in JSON, snake_case in Python."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, validate_by_name=True, validate_by_alias=True
+    )
+
+
+class WorkerRegisterBody(CamelModel):
     """Body of `PUT /api/workers/{worker_id}`."""
 
     name: str = Field(min_length=1)
     concurrent_limit: int = Field(ge=1, le=2**63 - 1)
 
 
-class WorkerOut(BaseModel):
+class WorkerOut(CamelModel):
     """A worker as shown by the API."""
 
     id: WorkerId
@@ -68,7 +77,7 @@ class WorkerOut(BaseModel):
         )
 
 
-class WorkerLeaseOut(BaseModel):
+class WorkerLeaseOut(CamelModel):
     """Worker heartbeat response."""
 
     lease_until: datetime
@@ -87,7 +96,7 @@ def _opt_dt(ms: int | None) -> datetime | None:
     return None if ms is None else _dt(ms)
 
 
-class JobCreateBody(BaseModel):
+class JobCreateBody(CamelModel):
     """Body of `POST /api/jobs`."""
 
     model_config = ConfigDict(allow_inf_nan=False)
@@ -99,14 +108,14 @@ class JobCreateBody(BaseModel):
     priority: int = Field(default=0, ge=-(2**31), le=2**31 - 1)
 
 
-class ClaimBody(BaseModel):
+class ClaimBody(CamelModel):
     """Body of `POST /api/jobs/claim`."""
 
     worker_id: WorkerId = Field(min_length=1)
     type: str = Field(min_length=1)
 
 
-class LeaseBody(BaseModel):
+class LeaseBody(CamelModel):
     """Lease proof sent with job heartbeat, finish and release."""
 
     worker_id: WorkerId = Field(min_length=1)
@@ -133,7 +142,7 @@ class FinishFailedBody(LeaseBody):
 FinishBody = Annotated[FinishSuccessBody | FinishFailedBody, Body(discriminator="status")]
 
 
-class JobOut(BaseModel):
+class JobOut(CamelModel):
     """A job as shown by the API. Never includes the lease token."""
 
     id: JobId
@@ -183,7 +192,7 @@ class JobOut(BaseModel):
         )
 
 
-class AttemptOut(BaseModel):
+class AttemptOut(CamelModel):
     """One attempt as shown by the API. Never includes the lease token."""
 
     attempt_no: int
@@ -208,7 +217,7 @@ class AttemptOut(BaseModel):
         )
 
 
-class JobDetailOut(BaseModel):
+class JobDetailOut(CamelModel):
     """`GET /api/jobs/{id}` response."""
 
     job: JobOut
@@ -220,7 +229,7 @@ class JobDetailOut(BaseModel):
         return cls(job=JobOut.build(job), attempts=[AttemptOut.build(a) for a in attempts])
 
 
-class JobLeaseOut(BaseModel):
+class JobLeaseOut(CamelModel):
     """Job heartbeat response."""
 
     lease_until: datetime
@@ -237,7 +246,7 @@ class JobLeaseOut(BaseModel):
         )
 
 
-class ClaimOut(BaseModel):
+class ClaimOut(CamelModel):
     """`POST /api/jobs/claim` response when a job was claimed."""
 
     job: JobOut
