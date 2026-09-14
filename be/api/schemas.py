@@ -1,0 +1,258 @@
+"""Request/response models and conversion from domain rows."""
+
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Literal, Self
+
+from fastapi import Body
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+
+from domain import (
+    Attempt,
+    AttemptOutcome,
+    Claim,
+    EpochMs,
+    Job,
+    JobId,
+    JobStatus,
+    Lease,
+    LeaseToken,
+    Worker,
+    WorkerId,
+)
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _dt(ms: int) -> datetime:
+    return _EPOCH + timedelta(milliseconds=ms)
+
+
+def _remaining(until: int, now: int) -> int:
+    return max(until - now, 0)
+
+
+class WorkerRegisterBody(BaseModel):
+    """Body of `PUT /api/workers/{worker_id}`."""
+
+    name: str = Field(min_length=1)
+    concurrent_limit: int = Field(ge=1, le=2**63 - 1)
+
+
+class WorkerOut(BaseModel):
+    """A worker as shown by the API."""
+
+    id: WorkerId
+    name: str
+    ip: str
+    concurrent_limit: int
+    connected_at: datetime
+    last_seen_at: datetime
+    lease_until: datetime
+    lease_ms_remaining: int
+    connected: bool
+
+    @classmethod
+    def build(cls, worker: Worker, now: EpochMs) -> Self:
+        """Convert a stored worker, computing lease fields against `now`."""
+        remaining = _remaining(worker.lease_until, now)
+        return cls(
+            id=worker.id,
+            name=worker.name,
+            ip=worker.ip,
+            concurrent_limit=worker.concurrent_limit,
+            connected_at=_dt(worker.connected_at),
+            last_seen_at=_dt(worker.last_seen_at),
+            lease_until=_dt(worker.lease_until),
+            lease_ms_remaining=remaining,
+            connected=remaining > 0,
+        )
+
+
+class WorkerLeaseOut(BaseModel):
+    """Worker heartbeat response."""
+
+    lease_until: datetime
+    lease_ms_remaining: int
+
+    @classmethod
+    def build(cls, worker: Worker, now: EpochMs) -> Self:
+        """Convert a worker's lease."""
+        return cls(
+            lease_until=_dt(worker.lease_until),
+            lease_ms_remaining=_remaining(worker.lease_until, now),
+        )
+
+
+def _opt_dt(ms: int | None) -> datetime | None:
+    return None if ms is None else _dt(ms)
+
+
+class JobCreateBody(BaseModel):
+    """Body of `POST /api/jobs`."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    type: str = Field(min_length=1)
+    description: JsonValue
+    max_attempt: int | None = Field(default=None, ge=1, le=100)
+    max_run_ms: int | None = Field(default=None, ge=1, le=86_400_000)
+    priority: int = Field(default=0, ge=-(2**31), le=2**31 - 1)
+
+
+class ClaimBody(BaseModel):
+    """Body of `POST /api/jobs/claim`."""
+
+    worker_id: WorkerId = Field(min_length=1)
+    type: str = Field(min_length=1)
+
+
+class LeaseBody(BaseModel):
+    """Lease proof sent with job heartbeat, finish and release."""
+
+    worker_id: WorkerId = Field(min_length=1)
+    lease_token: LeaseToken = Field(min_length=1)
+
+
+class FinishSuccessBody(LeaseBody):
+    """Finish body for a successful job."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    status: Literal["success"]
+    result: JsonValue = None
+
+
+class FinishFailedBody(LeaseBody):
+    """Finish body for a failed job."""
+
+    status: Literal["failed"]
+    error: str = Field(min_length=1)
+    error_detail: str | None = None
+
+
+FinishBody = Annotated[FinishSuccessBody | FinishFailedBody, Body(discriminator="status")]
+
+
+class JobOut(BaseModel):
+    """A job as shown by the API. Never includes the lease token."""
+
+    id: JobId
+    type: str
+    description: JsonValue
+    max_run_ms: int
+    worker_id: WorkerId | None
+    lease_until: datetime | None
+    deadline_at: datetime | None
+    available_at: datetime
+    priority: int
+    status: JobStatus
+    attempt: int
+    max_attempt: int
+    error: str | None
+    error_detail: str | None
+    result: JsonValue
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+    @classmethod
+    def build(cls, job: Job) -> Self:
+        """Convert a stored job."""
+        lease = job.lease
+        return cls(
+            id=job.id,
+            type=job.type,
+            description=job.description,
+            max_run_ms=job.max_run_ms,
+            worker_id=None if lease is None else lease.worker_id,
+            lease_until=None if lease is None else _dt(lease.until),
+            deadline_at=_opt_dt(job.deadline_at),
+            available_at=_dt(job.available_at),
+            priority=job.priority,
+            status=job.status,
+            attempt=job.attempt,
+            max_attempt=job.max_attempt,
+            error=job.error,
+            error_detail=job.error_detail,
+            result=job.result,
+            created_at=_dt(job.created_at),
+            updated_at=_dt(job.updated_at),
+            started_at=_opt_dt(job.started_at),
+            finished_at=_opt_dt(job.finished_at),
+        )
+
+
+class AttemptOut(BaseModel):
+    """One attempt as shown by the API. Never includes the lease token."""
+
+    attempt_no: int
+    worker_id: WorkerId
+    outcome: AttemptOutcome | None
+    error: str | None
+    error_detail: str | None
+    started_at: datetime
+    ended_at: datetime | None
+
+    @classmethod
+    def build(cls, attempt: Attempt) -> Self:
+        """Convert a stored attempt."""
+        return cls(
+            attempt_no=attempt.attempt_no,
+            worker_id=attempt.worker_id,
+            outcome=attempt.outcome,
+            error=attempt.error,
+            error_detail=attempt.error_detail,
+            started_at=_dt(attempt.started_at),
+            ended_at=_opt_dt(attempt.ended_at),
+        )
+
+
+class JobDetailOut(BaseModel):
+    """`GET /api/jobs/{id}` response."""
+
+    job: JobOut
+    attempts: list[AttemptOut]
+
+    @classmethod
+    def build(cls, job: Job, attempts: list[Attempt]) -> Self:
+        """Convert a job and its attempts."""
+        return cls(job=JobOut.build(job), attempts=[AttemptOut.build(a) for a in attempts])
+
+
+class JobLeaseOut(BaseModel):
+    """Job heartbeat response."""
+
+    lease_until: datetime
+    lease_ms_remaining: int
+    deadline_at: datetime
+
+    @classmethod
+    def build(cls, lease: Lease, now: EpochMs) -> Self:
+        """Convert a lease, computing the remaining time against `now`."""
+        return cls(
+            lease_until=_dt(lease.until),
+            lease_ms_remaining=_remaining(lease.until, now),
+            deadline_at=_dt(lease.deadline_at),
+        )
+
+
+class ClaimOut(BaseModel):
+    """`POST /api/jobs/claim` response when a job was claimed."""
+
+    job: JobOut
+    lease_token: LeaseToken
+    lease_until: datetime
+    lease_ms_remaining: int
+    deadline_at: datetime
+
+    @classmethod
+    def build(cls, claim: Claim, now: EpochMs) -> Self:
+        """Convert a claim."""
+        return cls(
+            job=JobOut.build(claim.job),
+            lease_token=claim.lease.token,
+            lease_until=_dt(claim.lease.until),
+            lease_ms_remaining=_remaining(claim.lease.until, now),
+            deadline_at=_dt(claim.lease.deadline_at),
+        )
