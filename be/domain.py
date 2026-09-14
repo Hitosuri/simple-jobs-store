@@ -1,7 +1,7 @@
 """Domain types shared by the store and the API."""
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import ClassVar, NewType
@@ -203,3 +203,40 @@ class Settings:
     backoff_cap_ms: int = 300_000
     cleanup_interval_ms: int = 5_000
     retention_ms: int = 604_800_000
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str]) -> "Settings":
+        """Build settings from `JOBS_STORE_<FIELD>` variables; unset ones keep their default.
+
+        Args:
+            environ: Environment mapping, usually `os.environ`.
+
+        Returns:
+            The settings.
+
+        Raises:
+            ValueError: A numeric variable is not a positive integer.
+        """
+        defaults = cls()
+
+        def positive_int(field: str, default: int) -> int:
+            name = f"JOBS_STORE_{field.upper()}"
+            raw = environ.get(name)
+            if raw is None:
+                return default
+            if not raw.strip().isdecimal() or int(raw) <= 0:
+                msg = f"{name} must be a positive integer, got {raw!r}"
+                raise ValueError(msg)
+            return int(raw)
+
+        return cls(
+            db_path=environ.get("JOBS_STORE_DB_PATH", defaults.db_path),
+            worker_lease_ms=positive_int("worker_lease_ms", defaults.worker_lease_ms),
+            job_lease_ms=positive_int("job_lease_ms", defaults.job_lease_ms),
+            default_max_run_ms=positive_int("default_max_run_ms", defaults.default_max_run_ms),
+            default_max_attempt=positive_int("default_max_attempt", defaults.default_max_attempt),
+            backoff_base_ms=positive_int("backoff_base_ms", defaults.backoff_base_ms),
+            backoff_cap_ms=positive_int("backoff_cap_ms", defaults.backoff_cap_ms),
+            cleanup_interval_ms=positive_int("cleanup_interval_ms", defaults.cleanup_interval_ms),
+            retention_ms=positive_int("retention_ms", defaults.retention_ms),
+        )
