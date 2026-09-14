@@ -9,7 +9,7 @@ From the repo root:
 
 ```bash
 # 1. start the store (see root README)
-uv run --directory be --env-file ../.env main.py
+uv run --project be --env-file .env be/main.py
 
 # 2. start the worker (another terminal)
 python worker-example/worker.py

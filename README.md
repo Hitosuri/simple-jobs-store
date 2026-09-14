@@ -18,6 +18,7 @@ and retried with exponential backoff. Backed by a single SQLite file.
 | `.env.example` | Config template, copy to `.env`                                         |
 | `WORKER.md`    | Worker developer guide                                                  |
 | `worker-example/` | Runnable Python worker (stdlib only)                                 |
+| `compose.yaml` | Docker Compose deploy of `be/` (image from `be/Dockerfile`)            |
 
 
 ## Quick start
@@ -26,11 +27,12 @@ Requires [uv](https://docs.astral.sh/uv/). Run from the repo root.
 
 ```bash
 cp .env.example .env
-uv run --directory be --env-file ../.env main.py
+mkdir -p data
+uv run --project be --env-file .env be/main.py
 ```
 
 The server listens on `http://127.0.0.1:8000`. The schema is created on first start in
-`be/jobs.db` (relative paths resolve from `be/`).
+`data/jobs.db` (`JOBS_STORE_DATA_DIR`; relative paths resolve from the repo root).
 
 Submit a job and look at it:
 
@@ -42,6 +44,19 @@ curl -X POST http://127.0.0.1:8000/api/jobs \
 curl http://127.0.0.1:8000/api/jobs/1
 ```
 
+### Docker
+
+```bash
+cp .env.example .env                       # set JOBS_STORE_DATA_DIR
+mkdir -p ./data && sudo chown 999:999 ./data   # same dir; chown on Linux only (container uid 999)
+docker compose up -d --build
+```
+
+Published on `JOBS_STORE_HOST:JOBS_STORE_PORT` of the host (`127.0.0.1:8000` by default; set
+`JOBS_STORE_HOST=0.0.0.0` to reach it from other machines). The database is `jobs.db` (plus
+`-wal` / `-shm` while running) in `JOBS_STORE_DATA_DIR`. Compose refuses to start if that directory
+doesn't exist. Keep it on a local disk: SQLite WAL needs working file locks.
+
 ## Configuration
 
 Environment variables, all optional (defaults in `.env.example`). Durations are milliseconds.
@@ -51,7 +66,7 @@ Environment variables, all optional (defaults in `.env.example`). Durations are 
 | -------------------------------- | ----------- | ---------------------------------------- |
 | `JOBS_STORE_HOST`                | `127.0.0.1` | Bind address                             |
 | `JOBS_STORE_PORT`                | `8000`      | Port                                     |
-| `JOBS_STORE_DB_PATH`             | `jobs.db`   | SQLite file, relative to `be/`           |
+| `JOBS_STORE_DATA_DIR`            | `data`      | Directory holding `jobs.db`; must exist  |
 | `JOBS_STORE_WORKER_LEASE_MS`     | `30000`     | Worker lease length                      |
 | `JOBS_STORE_JOB_LEASE_MS`        | `30000`     | Job lease length                         |
 | `JOBS_STORE_DEFAULT_MAX_RUN_MS`  | `86400000`  | Per-claim deadline when a job sets none  |
@@ -60,7 +75,6 @@ Environment variables, all optional (defaults in `.env.example`). Durations are 
 | `JOBS_STORE_BACKOFF_CAP_MS`      | `300000`    | Max retry delay                          |
 | `JOBS_STORE_CLEANUP_INTERVAL_MS` | `5000`      | How often expired leases are revoked     |
 | `JOBS_STORE_RETENTION_MS`        | `604800000` | Finished jobs are deleted after this     |
-
 
 ## API overview
 

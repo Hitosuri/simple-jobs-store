@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from domain import Settings
@@ -8,8 +10,12 @@ def test_from_env_without_variables_uses_defaults() -> None:
 
 
 def test_from_env_overrides_set_variables() -> None:
-    settings = Settings.from_env({"JOBS_STORE_DB_PATH": "x.db", "JOBS_STORE_JOB_LEASE_MS": "5000"})
-    assert settings == Settings(db_path="x.db", job_lease_ms=5_000)
+    settings = Settings.from_env({"JOBS_STORE_DATA_DIR": "x", "JOBS_STORE_JOB_LEASE_MS": "5000"})
+    assert settings == Settings(data_dir="x", job_lease_ms=5_000)
+
+
+def test_db_path_is_jobs_db_inside_data_dir() -> None:
+    assert Path(Settings(data_dir="x").db_path) == Path("x/jobs.db")
 
 
 @pytest.mark.parametrize("raw", ["0", "-1", "abc", "1.5", ""])

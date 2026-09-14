@@ -1,4 +1,4 @@
-"""Serve the jobs store: `uv run --directory be main.py`."""
+"""Serve the jobs store from the repo root: `uv run --project be --env-file .env be/main.py`."""
 
 import os
 

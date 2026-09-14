@@ -37,7 +37,7 @@ def clock() -> FakeClock:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    return Settings(db_path=str(tmp_path / "jobs.db"), cleanup_interval_ms=3_600_000)
+    return Settings(data_dir=str(tmp_path), cleanup_interval_ms=3_600_000)
 
 
 @pytest.fixture

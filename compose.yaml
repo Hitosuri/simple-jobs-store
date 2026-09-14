@@ -1,0 +1,19 @@
+services:
+  be:
+    build: ./be
+    env_file: .env
+    # Fixed inside the container; .env's host, port and data dir are applied on the
+    # host side instead (publish address and bind source below).
+    environment:
+      JOBS_STORE_HOST: 0.0.0.0
+      JOBS_STORE_PORT: "8000"
+      JOBS_STORE_DATA_DIR: /data
+    ports:
+      - "${JOBS_STORE_HOST:-127.0.0.1}:${JOBS_STORE_PORT:-8000}:8000"
+    volumes:
+      - type: bind
+        source: ${JOBS_STORE_DATA_DIR:?set JOBS_STORE_DATA_DIR in .env}
+        target: /data
+        bind:
+          create_host_path: false
+    restart: unless-stopped

@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import ClassVar, NewType
 
 from pydantic import JsonValue
@@ -194,7 +195,7 @@ class JobAlreadyFinishedError(StoreError):
 class Settings:
     """Store configuration. Durations are milliseconds."""
 
-    db_path: str = "jobs.db"
+    data_dir: str = "data"
     worker_lease_ms: int = 30_000
     job_lease_ms: int = 30_000
     default_max_run_ms: int = 86_400_000
@@ -203,6 +204,11 @@ class Settings:
     backoff_cap_ms: int = 300_000
     cleanup_interval_ms: int = 5_000
     retention_ms: int = 604_800_000
+
+    @property
+    def db_path(self) -> str:
+        """SQLite file: `jobs.db` inside `data_dir`, which must already exist."""
+        return str(Path(self.data_dir) / "jobs.db")
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str]) -> "Settings":
@@ -230,7 +236,7 @@ class Settings:
             return int(raw)
 
         return cls(
-            db_path=environ.get("JOBS_STORE_DB_PATH", defaults.db_path),
+            data_dir=environ.get("JOBS_STORE_DATA_DIR", defaults.data_dir),
             worker_lease_ms=positive_int("worker_lease_ms", defaults.worker_lease_ms),
             job_lease_ms=positive_int("job_lease_ms", defaults.job_lease_ms),
             default_max_run_ms=positive_int("default_max_run_ms", defaults.default_max_run_ms),
