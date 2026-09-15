@@ -22,6 +22,10 @@ from domain import (
     Lease,
     LeaseRejectedError,
     LeaseToken,
+    Report,
+    ReportMethod,
+    ReportStatus,
+    ReportTask,
     Settings,
     SuccessReport,
     Worker,
@@ -31,6 +35,7 @@ from domain import (
 )
 
 _JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+_METHODS: TypeAdapter[list[ReportMethod]] = TypeAdapter(list[ReportMethod])
 
 
 def _one(cursor: sqlite3.Cursor) -> sqlite3.Row | None:
@@ -77,6 +82,16 @@ def _to_job(row: sqlite3.Row) -> Job:
             until=EpochMs(row["lease_until"]),
             deadline_at=EpochMs(row["deadline_at"]),
         )
+    report = None
+    if row["report_methods"] is not None:
+        report = Report(
+            methods=_METHODS.validate_json(row["report_methods"]),
+            status=None if row["report_status"] is None else ReportStatus(row["report_status"]),
+            round=row["report_round"],
+            cursor=row["report_cursor"],
+            next_at=_opt_ms(row["report_next_at"]),
+            error=row["report_error"],
+        )
     return Job(
         id=JobId(row["id"]),
         type=row["type"],
@@ -96,6 +111,7 @@ def _to_job(row: sqlite3.Row) -> Job:
         updated_at=EpochMs(row["updated_at"]),
         started_at=_opt_ms(row["started_at"]),
         finished_at=_opt_ms(row["finished_at"]),
+        report=report,
     )
 
 
@@ -218,6 +234,7 @@ def create_job(
     max_attempt: int | None,
     max_run_ms: int | None,
     priority: int,
+    reports: list[ReportMethod] | None = None,
 ) -> Job:
     """Insert a pending job available immediately.
 
@@ -230,6 +247,7 @@ def create_job(
         max_attempt: Attempt limit, or None for the default.
         max_run_ms: Hard run limit per claim, or None for the default.
         priority: Higher is claimed first.
+        reports: Report methods in backup order, or None for no reports.
 
     Returns:
         The stored job.
@@ -239,9 +257,9 @@ def create_job(
             conn.execute(
                 """
                 INSERT INTO jobs (type, description, max_run_ms, available_at, priority, status,
-                                  max_attempt, created_at, updated_at)
+                                  max_attempt, created_at, updated_at, report_methods)
                 VALUES (:type, :description, :max_run_ms, :now, :priority, 'pending',
-                        :max_attempt, :now, :now)
+                        :max_attempt, :now, :now, :reports)
                 RETURNING *
                 """,
                 {
@@ -253,6 +271,7 @@ def create_job(
                     "max_attempt": (
                         settings.default_max_attempt if max_attempt is None else max_attempt
                     ),
+                    "reports": None if reports is None else _METHODS.dump_json(reports).decode(),
                 },
             ),
         )
@@ -394,6 +413,17 @@ def _end_attempt(
     )
 
 
+def _start_report(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -> None:
+    conn.execute(
+        """
+        UPDATE jobs SET report_status = 'pending', report_next_at = :now, report_round = 0,
+                        report_cursor = 0, report_error = NULL
+        WHERE id = :id AND report_methods IS NOT NULL
+        """,
+        {"now": now, "id": job_id},
+    )
+
+
 def _retry_or_fail(
     conn: sqlite3.Connection,
     *,
@@ -420,6 +450,7 @@ def _retry_or_fail(
             """,
             params,
         )
+        _start_report(conn, now=now, job_id=job.id)
         return
     backoff = min(settings.backoff_base_ms * 2 ** (used - 1), settings.backoff_cap_ms)
     conn.execute(
@@ -514,7 +545,8 @@ def _hold(
         """
         UPDATE jobs SET status = 'running', worker_id = :worker_id, lease_token = :token,
                         lease_until = :until, error = NULL, error_detail = NULL,
-                        finished_at = NULL, updated_at = :now
+                        finished_at = NULL, report_status = NULL, report_next_at = NULL,
+                        updated_at = :now
         WHERE id = :id
         """,
         {
@@ -628,6 +660,7 @@ def finish_job(
                 """,
                 {"result": _dump(report.result), "now": now, "id": job_id},
             )
+            _start_report(conn, now=now, job_id=job_id)
         else:
             _end_attempt(
                 conn,
@@ -749,3 +782,119 @@ def cleanup(conn: sqlite3.Connection, *, now: EpochMs, settings: Settings) -> No
             " AND finished_at < ?",
             (now - settings.retention_ms,),
         )
+
+
+def _advance_report(
+    conn: sqlite3.Connection, *, now: EpochMs, settings: Settings, job: Job, error: str
+) -> None:
+    report = job.report
+    if report is None:
+        raise TypeError
+    cursor = report.cursor + 1
+    rounds = report.round
+    if cursor == len(report.methods):
+        cursor, rounds = 0, rounds + 1
+    next_at: int | None
+    if rounds >= settings.report_max_rounds:
+        status, next_at = ReportStatus.FAILED, None
+    else:
+        failed_sends = rounds * len(report.methods) + cursor
+        backoff = min(
+            settings.report_backoff_base_ms * 2 ** (failed_sends - 1),
+            settings.report_backoff_cap_ms,
+        )
+        if not isinstance(backoff, int):
+            raise TypeError
+        status, next_at = ReportStatus.PENDING, now + backoff
+    conn.execute(
+        "UPDATE jobs SET report_status = ?, report_next_at = ?, report_round = ?,"
+        " report_cursor = ?, report_error = ? WHERE id = ?",
+        (status, next_at, rounds, cursor, error, job.id),
+    )
+
+
+def take_due_report(
+    conn: sqlite3.Connection, *, now: EpochMs, settings: Settings
+) -> ReportTask | None:
+    """Mark the next due report as being sent and return what to send.
+
+    Reports still `reporting` past their send deadline (the process died mid-send) are first
+    counted as a failed send with error `interrupted`.
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        settings: Store settings (send timeout, report backoff and rounds).
+
+    Returns:
+        The job, the method at its cursor and the send token, or None when nothing is due.
+    """
+    with transaction(conn):
+        overdue = conn.execute(
+            "SELECT * FROM jobs WHERE report_status = 'reporting' AND report_next_at <= ?",
+            (now,),
+        ).fetchall()
+        for stuck in overdue:
+            _advance_report(
+                conn, now=now, settings=settings, job=_to_job(stuck), error="interrupted"
+            )
+        row = _one(
+            conn.execute(
+                "SELECT * FROM jobs WHERE report_status = 'pending' AND report_next_at <= ?"
+                " ORDER BY report_next_at, id LIMIT 1",
+                (now,),
+            ),
+        )
+        if row is None:
+            return None
+        job = _to_job(row)
+        report = job.report
+        if report is None:
+            raise TypeError
+        token = EpochMs(now + settings.report_timeout_ms)
+        conn.execute(
+            "UPDATE jobs SET report_status = 'reporting', report_next_at = ? WHERE id = ?",
+            (token, job.id),
+        )
+        return ReportTask(job=job, method=report.methods[report.cursor], token=token)
+
+
+def record_report(
+    conn: sqlite3.Connection,
+    *,
+    now: EpochMs,
+    settings: Settings,
+    job_id: JobId,
+    token: EpochMs,
+    error: str | None,
+) -> None:
+    """Store the outcome of a send taken by `take_due_report`.
+
+    Ignored when the report is no longer that send (job reclaimed, purged or re-finished).
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        settings: Store settings (report backoff and rounds).
+        job_id: Reported job.
+        token: `ReportTask.token` of the send.
+        error: None when delivered, else why the send failed.
+    """
+    with transaction(conn):
+        row = _one(
+            conn.execute(
+                "SELECT * FROM jobs WHERE id = ? AND report_status = 'reporting'"
+                " AND report_next_at = ?",
+                (job_id, token),
+            ),
+        )
+        if row is None:
+            return
+        if error is None:
+            conn.execute(
+                "UPDATE jobs SET report_status = 'success', report_next_at = NULL,"
+                " report_error = NULL WHERE id = ?",
+                (job_id,),
+            )
+            return
+        _advance_report(conn, now=now, settings=settings, job=_to_job(row), error=error)

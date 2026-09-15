@@ -17,6 +17,8 @@ from domain import (
     JobStatus,
     Lease,
     LeaseToken,
+    ReportMethod,
+    ReportStatus,
     Worker,
     WorkerId,
 )
@@ -106,6 +108,7 @@ class JobCreateBody(CamelModel):
     max_attempt: int | None = Field(default=None, ge=1, le=100)
     max_run_ms: int | None = Field(default=None, ge=1, le=86_400_000)
     priority: int = Field(default=0, ge=-(2**31), le=2**31 - 1)
+    reports: list[ReportMethod] | None = Field(default=None, min_length=1, max_length=10)
 
 
 class ClaimBody(CamelModel):
@@ -164,11 +167,18 @@ class JobOut(CamelModel):
     updated_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    reports: list[ReportMethod] | None
+    report_status: ReportStatus | None
+    report_round: int
+    report_cursor: int
+    report_next_at: datetime | None
+    report_error: str | None
 
     @classmethod
     def build(cls, job: Job) -> Self:
         """Convert a stored job."""
         lease = job.lease
+        report = job.report
         return cls(
             id=job.id,
             type=job.type,
@@ -189,6 +199,37 @@ class JobOut(CamelModel):
             updated_at=_dt(job.updated_at),
             started_at=_opt_dt(job.started_at),
             finished_at=_opt_dt(job.finished_at),
+            reports=None if report is None else report.methods,
+            report_status=None if report is None else report.status,
+            report_round=0 if report is None else report.round,
+            report_cursor=0 if report is None else report.cursor,
+            report_next_at=_opt_dt(None if report is None else report.next_at),
+            report_error=None if report is None else report.error,
+        )
+
+
+class ReportBody(CamelModel):
+    """JSON body a `callback` report POSTs to the provider."""
+
+    id: JobId
+    status: JobStatus
+    started_at: datetime | None
+    finished_at: datetime | None
+    result: JsonValue
+    error: str | None
+    error_detail: str | None
+
+    @classmethod
+    def build(cls, job: Job) -> Self:
+        """Describe a finished job for its provider."""
+        return cls(
+            id=job.id,
+            status=job.status,
+            started_at=_opt_dt(job.started_at),
+            finished_at=_opt_dt(job.finished_at),
+            result=job.result,
+            error=job.error,
+            error_detail=job.error_detail,
         )
 
 

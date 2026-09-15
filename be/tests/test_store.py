@@ -9,7 +9,9 @@ import store
 from db import connect
 from domain import (
     AttemptOutcome,
+    CallbackMethod,
     Claim,
+    EpochMs,
     FailureReport,
     Job,
     JobAlreadyFinishedError,
@@ -19,6 +21,10 @@ from domain import (
     Lease,
     LeaseRejectedError,
     LeaseToken,
+    Report,
+    ReportMethod,
+    ReportStatus,
+    ReportTask,
     Settings,
     SuccessReport,
     WorkerId,
@@ -53,6 +59,7 @@ def add_job(
     priority: int = 0,
     max_attempt: int | None = None,
     max_run_ms: int | None = None,
+    reports: list[ReportMethod] | None = None,
 ) -> Job:
     return store.create_job(
         conn,
@@ -63,6 +70,7 @@ def add_job(
         max_attempt=max_attempt,
         max_run_ms=max_run_ms,
         priority=priority,
+        reports=reports,
     )
 
 
@@ -736,3 +744,259 @@ def test_cleanup_purges_old_finished_jobs_with_their_attempts(
         store.get_job(conn, job_id=old.id)
     assert conn.execute("SELECT COUNT(*) FROM job_attempts").fetchone()[0] == 0
     assert store.get_job(conn, job_id=still_pending.id)[0].status is JobStatus.PENDING
+
+
+HOOKS: list[ReportMethod] = [
+    CallbackMethod.model_validate({"type": "callback", "config": {"url": f"https://p.example/{n}"}})
+    for n in ("primary", "backup")
+]
+
+
+def report_of(conn: sqlite3.Connection, job_id: JobId) -> Report:
+    report = store.get_job(conn, job_id=job_id)[0].report
+    assert report is not None
+    return report
+
+
+def finished_with_reports(
+    conn: sqlite3.Connection,
+    clock: FakeClock,
+    settings: Settings,
+    report: SuccessReport | FailureReport,
+    max_attempt: int | None = None,
+) -> Claim:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=max_attempt, reports=HOOKS)
+    claimed = claim(conn, clock, settings, wid)
+    finish(conn, clock, settings, claimed, report)
+    return claimed
+
+
+def test_job_without_reports_has_no_report(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    job = add_job(conn, clock, settings)
+    assert job.report is None
+    done = finish(conn, clock, settings, claim(conn, clock, settings, wid), SuccessReport(result=1))
+    assert done.report is None
+
+
+def test_create_job_stores_report_methods(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = add_job(conn, clock, settings, reports=HOOKS)
+    assert job.report == Report(
+        methods=HOOKS, status=None, round=0, cursor=0, next_at=None, error=None
+    )
+
+
+def test_success_starts_report_due_now(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    report = report_of(conn, claimed.job.id)
+    assert report.status is ReportStatus.PENDING
+    assert report.next_at == clock.now
+    assert (report.round, report.cursor, report.error) == (0, 0, None)
+
+
+def test_failure_with_attempts_left_does_not_start_report(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, BOOM, max_attempt=2)
+    assert report_of(conn, claimed.job.id).status is None
+
+
+def test_final_failure_starts_report(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, BOOM, max_attempt=1)
+    assert report_of(conn, claimed.job.id).status is ReportStatus.PENDING
+
+
+def test_lease_expiry_at_max_attempt_starts_report(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=1, reports=HOOKS)
+    claimed = claim(conn, clock, settings, wid)
+    clock.advance(settings.job_lease_ms)
+    run_cleanup(conn, clock, settings)
+    report = report_of(conn, claimed.job.id)
+    assert report.status is ReportStatus.PENDING
+    assert report.next_at == clock.now
+
+
+def test_cancel_does_not_start_report(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = add_job(conn, clock, settings, reports=HOOKS)
+    store.cancel_job(conn, now=clock(), job_id=job.id)
+    assert report_of(conn, job.id).status is None
+
+
+def test_reclaim_clears_started_report(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=1, reports=HOOKS)
+    claimed = claim(conn, clock, settings, wid)
+    clock.advance(settings.job_lease_ms)
+    run_cleanup(conn, clock, settings)
+    assert report_of(conn, claimed.job.id).status is ReportStatus.PENDING
+    heartbeat(conn, clock, settings, claimed)
+    report = report_of(conn, claimed.job.id)
+    assert (report.status, report.next_at) == (None, None)
+    finish(conn, clock, settings, claimed, SuccessReport(result=None))
+    assert report_of(conn, claimed.job.id).status is ReportStatus.PENDING
+
+
+def take(conn: sqlite3.Connection, clock: FakeClock, settings: Settings) -> ReportTask | None:
+    return store.take_due_report(conn, now=clock(), settings=settings)
+
+
+def record(
+    conn: sqlite3.Connection,
+    clock: FakeClock,
+    settings: Settings,
+    task: ReportTask,
+    error: str | None,
+) -> None:
+    store.record_report(
+        conn, now=clock(), settings=settings, job_id=task.job.id, token=task.token, error=error
+    )
+
+
+def taken(conn: sqlite3.Connection, clock: FakeClock, settings: Settings) -> ReportTask:
+    task = take(conn, clock, settings)
+    assert task is not None
+    return task
+
+
+def test_take_due_report_marks_reporting_with_first_method(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    task = taken(conn, clock, settings)
+    assert task.job.id == claimed.job.id
+    assert task.method == HOOKS[0]
+    assert task.token == clock.now + settings.report_timeout_ms
+    report = report_of(conn, claimed.job.id)
+    assert (report.status, report.next_at) == (ReportStatus.REPORTING, task.token)
+    assert take(conn, clock, settings) is None
+
+
+def test_take_due_report_with_nothing_due_returns_none(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    add_job(conn, clock, settings, reports=HOOKS)
+    assert take(conn, clock, settings) is None
+
+
+def test_record_success_finishes_report(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    record(conn, clock, settings, taken(conn, clock, settings), None)
+    report = report_of(conn, claimed.job.id)
+    assert (report.status, report.next_at, report.error) == (ReportStatus.SUCCESS, None, None)
+
+
+def test_failed_send_waits_backoff_then_uses_next_method(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    record(conn, clock, settings, taken(conn, clock, settings), "HTTP 500")
+    report = report_of(conn, claimed.job.id)
+    assert report.status is ReportStatus.PENDING
+    assert (report.round, report.cursor, report.error) == (0, 1, "HTTP 500")
+    assert report.next_at == clock.now + settings.report_backoff_base_ms
+    clock.advance(settings.report_backoff_base_ms - 1)
+    assert take(conn, clock, settings) is None
+    clock.advance(1)
+    assert taken(conn, clock, settings).method == HOOKS[1]
+
+
+def test_report_backoff_doubles_caps_and_gives_up_after_max_rounds(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    capped = replace(settings, report_backoff_cap_ms=50_000)
+    claimed = finished_with_reports(conn, clock, capped, SuccessReport(result=None))
+    delays: list[int] = []
+    positions: list[tuple[int, int]] = []
+    for _ in range(capped.report_max_rounds * len(HOOKS) - 1):
+        record(conn, clock, capped, taken(conn, clock, capped), "HTTP 500")
+        report = report_of(conn, claimed.job.id)
+        assert report.next_at is not None
+        delays.append(report.next_at - clock.now)
+        positions.append((report.round, report.cursor))
+        clock.advance(report.next_at - clock.now)
+    assert delays == [10_000, 20_000, 40_000, 50_000, 50_000]
+    assert positions == [(0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
+    record(conn, clock, capped, taken(conn, clock, capped), "HTTP 503")
+    report = report_of(conn, claimed.job.id)
+    assert (report.status, report.next_at) == (ReportStatus.FAILED, None)
+    assert (report.round, report.cursor, report.error) == (3, 0, "HTTP 503")
+    assert take(conn, clock, capped) is None
+
+
+def test_overdue_reporting_counts_as_interrupted(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    taken(conn, clock, settings)
+    clock.advance(settings.report_timeout_ms)
+    assert take(conn, clock, settings) is None
+    report = report_of(conn, claimed.job.id)
+    assert report.status is ReportStatus.PENDING
+    assert (report.cursor, report.error) == (1, "interrupted")
+    assert report.next_at == clock.now + settings.report_backoff_base_ms
+
+
+def test_record_with_stale_token_is_ignored(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    task = taken(conn, clock, settings)
+    record(conn, clock, settings, replace(task, token=EpochMs(task.token + 1)), None)
+    assert report_of(conn, claimed.job.id).status is ReportStatus.REPORTING
+
+
+def test_record_after_reclaim_is_ignored(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=1, reports=HOOKS)
+    claimed = claim(conn, clock, settings, wid)
+    clock.advance(settings.job_lease_ms)
+    run_cleanup(conn, clock, settings)
+    task = taken(conn, clock, settings)
+    heartbeat(conn, clock, settings, claimed)
+    record(conn, clock, settings, task, None)
+    assert report_of(conn, claimed.job.id).status is None
+
+
+def test_record_after_purge_does_not_raise(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    task = taken(conn, clock, settings)
+    clock.advance(settings.retention_ms + 1)
+    run_cleanup(conn, clock, settings)
+    record(conn, clock, settings, task, None)
+    with pytest.raises(JobNotFoundError):
+        store.get_job(conn, job_id=claimed.job.id)
+
+
+def test_report_writes_leave_updated_at_alone(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    updated_at = store.get_job(conn, job_id=claimed.job.id)[0].updated_at
+    clock.advance(1)
+    record(conn, clock, settings, taken(conn, clock, settings), "HTTP 500")
+    assert store.get_job(conn, job_id=claimed.job.id)[0].updated_at == updated_at
+    clock.advance(settings.report_backoff_base_ms)
+    record(conn, clock, settings, taken(conn, clock, settings), None)
+    assert store.get_job(conn, job_id=claimed.job.id)[0].updated_at == updated_at

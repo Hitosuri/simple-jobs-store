@@ -6,6 +6,7 @@ and retried with exponential backoff. Backed by a single SQLite file.
 
 - Building a worker? Read [**WORKER.md**](WORKER.md).
 - How the store decides claim order, retries and attempts: [be/README.md](be/README.md).
+- Getting job results pushed to you (`reports` callbacks): [be/README.md §8](be/README.md#8-reports-to-providers).
 - Interactive API docs: `http://127.0.0.1:8000/docs` once the server is running.
 
 ## Repo layout
@@ -75,6 +76,10 @@ Environment variables, all optional (defaults in `.env.example`). Durations are 
 | `JOBS_STORE_BACKOFF_CAP_MS`      | `300000`    | Max retry delay                          |
 | `JOBS_STORE_CLEANUP_INTERVAL_MS` | `5000`      | How often expired leases are revoked     |
 | `JOBS_STORE_RETENTION_MS`        | `604800000` | Finished jobs are deleted after this     |
+| `JOBS_STORE_REPORT_MAX_ROUNDS`      | `3`         | Passes over a job's report methods before giving up |
+| `JOBS_STORE_REPORT_TIMEOUT_MS`      | `10000`     | Timeout of each network operation in a report send (connect / write / read of the status line), not a total deadline |
+| `JOBS_STORE_REPORT_BACKOFF_BASE_MS` | `10000`     | Delay before the first report retry (doubles)       |
+| `JOBS_STORE_REPORT_BACKOFF_CAP_MS`  | `600000`    | Max report retry delay                              |
 
 ## API overview
 
@@ -84,7 +89,7 @@ All routes are under `/api` and return `{"ok": true, "data": ...}` or
 
 | Method | Path                                | Used by  | Purpose                                                         |
 | ------ | ----------------------------------- | -------- | --------------------------------------------------------------- |
-| POST   | `/api/jobs`                         | provider | Submit `{type, description, maxAttempt?, maxRunMs?, priority?}` |
+| POST   | `/api/jobs`                         | provider | Submit `{type, description, maxAttempt?, maxRunMs?, priority?, reports?}` |
 | GET    | `/api/jobs?status=&type=&limit=`    | anyone   | List jobs, newest first                                         |
 | GET    | `/api/jobs/{id}`                    | anyone   | Job + attempt history                                           |
 | POST   | `/api/jobs/{id}/cancel`             | provider | Cancel a pending or running job                                 |
@@ -104,6 +109,7 @@ Worker-side details (lease rules, error codes, retries, reference code): [WORKER
 - No authentication; worker ids are self-declared. Don't expose the store publicly.
 - Single process, single SQLite file.
 - No size limits on job payloads yet.
+- Report callbacks go to any URL a provider gives, including internal addresses.
 
 ## Development
 

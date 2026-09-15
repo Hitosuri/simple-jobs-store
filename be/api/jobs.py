@@ -39,6 +39,7 @@ def create_job(
         max_attempt=body.max_attempt,
         max_run_ms=body.max_run_ms,
         priority=body.priority,
+        reports=body.reports,
     )
     return ApiOk[JobOut](data=JobOut.build(job))
 

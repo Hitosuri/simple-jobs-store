@@ -64,3 +64,46 @@ def test_deleting_job_cascades_to_attempts(conn: sqlite3.Connection) -> None:
         )
         conn.execute("DELETE FROM jobs WHERE id = 1")
     assert conn.execute("SELECT COUNT(*) FROM job_attempts").fetchone()[0] == 0
+
+
+INSERT_REPORT_JOB = """
+INSERT INTO jobs (type, description, max_run_ms, available_at, status, max_attempt,
+                  created_at, updated_at, report_methods, report_status, report_next_at)
+VALUES ('t', '{}', 1000, 0, 'success', 3, 0, 0, ?, ?, ?)
+"""
+
+
+@pytest.mark.parametrize(
+    ("methods", "report_status", "next_at"),
+    [
+        (None, None, None),
+        ("[]", None, None),
+        ("[]", "pending", 5),
+        ("[]", "reporting", 5),
+        ("[]", "success", None),
+        ("[]", "failed", None),
+    ],
+)
+def test_valid_report_state_is_accepted(
+    conn: sqlite3.Connection, methods: str | None, report_status: str | None, next_at: int | None
+) -> None:
+    with transaction(conn):
+        conn.execute(INSERT_REPORT_JOB, (methods, report_status, next_at))
+
+
+@pytest.mark.parametrize(
+    ("methods", "report_status", "next_at"),
+    [
+        (None, "pending", 5),
+        ("[]", "pending", None),
+        ("[]", "reporting", None),
+        ("[]", None, 5),
+        ("[]", "success", 5),
+        ("[]", "bogus", None),
+    ],
+)
+def test_report_invariant_is_enforced(
+    conn: sqlite3.Connection, methods: str | None, report_status: str | None, next_at: int | None
+) -> None:
+    with pytest.raises(sqlite3.IntegrityError), transaction(conn):
+        conn.execute(INSERT_REPORT_JOB, (methods, report_status, next_at))

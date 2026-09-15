@@ -1,4 +1,4 @@
-"""Application factory and the background cleaner."""
+"""Application factory and the background cleaner and reporter."""
 
 import asyncio
 import contextlib
@@ -6,12 +6,15 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, closing
 
+import httpx2
 from fastapi import FastAPI
 
+import reports
 import store
 from api import jobs, workers
 from api.deps import Runtime
 from api.envelope import install_error_handlers
+from api.schemas import ReportBody
 from db import connect, init_schema
 from domain import Clock, Settings
 
@@ -32,8 +35,32 @@ async def _run_cleaner(settings: Settings, clock: Clock) -> None:
             logger.exception("cleanup failed")
 
 
+def _report_once(settings: Settings, clock: Clock, client: httpx2.Client) -> None:
+    with closing(connect(settings.db_path)) as conn:
+        while (task := store.take_due_report(conn, now=clock(), settings=settings)) is not None:
+            body = ReportBody.build(task.job).model_dump(mode="json", by_alias=True)
+            error = reports.send(client, task.method, body)
+            store.record_report(
+                conn,
+                now=clock(),
+                settings=settings,
+                job_id=task.job.id,
+                token=task.token,
+                error=error,
+            )
+
+
+async def _run_reporter(settings: Settings, clock: Clock, client: httpx2.Client) -> None:
+    while True:
+        await asyncio.sleep(settings.cleanup_interval_ms / 1000)
+        try:
+            await asyncio.to_thread(_report_once, settings, clock, client)
+        except Exception:
+            logger.exception("reporting failed")
+
+
 def create_app(settings: Settings, clock: Clock) -> FastAPI:
-    """Build the FastAPI app; the lifespan creates the schema and runs the cleaner.
+    """Build the FastAPI app; the lifespan creates the schema and runs the cleaner and reporter.
 
     Args:
         settings: Store settings.
@@ -47,11 +74,16 @@ def create_app(settings: Settings, clock: Clock) -> FastAPI:
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         with closing(connect(settings.db_path)) as conn:
             init_schema(conn)
-        cleaner = asyncio.create_task(_run_cleaner(settings, clock))
-        yield
-        cleaner.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await cleaner
+        with httpx2.Client(timeout=settings.report_timeout_ms / 1000) as http:
+            tasks = [
+                asyncio.create_task(_run_cleaner(settings, clock)),
+                asyncio.create_task(_run_reporter(settings, clock, http)),
+            ]
+            yield
+            for task in tasks:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     app = FastAPI(title="simple-jobs-store", lifespan=lifespan)
     app.state.runtime = Runtime(settings=settings, clock=clock)

@@ -1,9 +1,12 @@
+import sqlite3
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from domain import Settings
+import store
+from api.schemas import ReportBody
+from domain import JobId, Settings
 from tests.conftest import FakeClock
 
 START_ISO = "2027-01-15T08:00:00Z"
@@ -253,3 +256,69 @@ def test_cancel_running_job_rejects_worker_then_cannot_cancel_again(client: Test
     again = client.post(f"/api/jobs/{job_id}/cancel")
     assert again.status_code == 409
     assert error_code(again) == "JOB_ALREADY_FINISHED"
+
+
+HOOK = {"type": "callback", "config": {"url": "https://p.example/hook"}}
+
+
+def test_create_job_with_reports_round_trips(client: TestClient) -> None:
+    job = create(client, reports=[HOOK, HOOK])
+    stored = client.get(f"/api/jobs/{job['id']}").json()["data"]["job"]
+    for view in (job, stored):
+        assert view["reports"] == [HOOK, HOOK]
+        assert view["reportStatus"] is None
+        assert (view["reportRound"], view["reportCursor"]) == (0, 0)
+        assert view["reportNextAt"] is None
+        assert view["reportError"] is None
+    assert create(client)["reports"] is None
+
+
+def test_finished_job_shows_pending_report(client: TestClient) -> None:
+    register(client)
+    create(client, reports=[HOOK])
+    claimed = claim(client)
+    done = client.post(
+        f"/api/jobs/{claimed['job']['id']}/finish",
+        json={"status": "success", **lease_body(claimed)},
+    ).json()["data"]
+    assert done["reportStatus"] == "pending"
+    assert done["reportNextAt"] == START_ISO
+
+
+@pytest.mark.parametrize(
+    "reports",
+    [
+        [],
+        [{"type": "email", "config": {"url": "https://p.example/hook"}}],
+        [{"type": "callback", "config": {"url": "ftp://p.example/hook"}}],
+        [{"type": "callback", "config": {"url": "not a url"}}],
+        [{"type": "callback"}],
+        [HOOK] * 11,
+    ],
+)
+def test_create_job_rejects_invalid_reports(client: TestClient, reports: Any) -> None:
+    resp = client.post("/api/jobs", json={"type": "t", "description": {}, "reports": reports})
+    assert resp.status_code == 422
+    assert error_code(resp) == "VALIDATION_ERROR"
+
+
+def test_report_body_is_camel_case_with_iso_times(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    register(client)
+    create(client, reports=[HOOK], maxAttempt=1)
+    claimed = claim(client)
+    client.post(
+        f"/api/jobs/{claimed['job']['id']}/finish",
+        json={"status": "failed", "error": "boom", **lease_body(claimed)},
+    )
+    job, _ = store.get_job(conn, job_id=JobId(claimed["job"]["id"]))
+    assert ReportBody.build(job).model_dump(mode="json", by_alias=True) == {
+        "id": claimed["job"]["id"],
+        "status": "failed",
+        "startedAt": START_ISO,
+        "finishedAt": START_ISO,
+        "result": None,
+        "error": "boom",
+        "errorDetail": None,
+    }

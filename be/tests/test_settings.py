@@ -22,3 +22,30 @@ def test_db_path_is_jobs_db_inside_data_dir() -> None:
 def test_from_env_rejects_non_positive_integers(raw: str) -> None:
     with pytest.raises(ValueError, match="JOBS_STORE_RETENTION_MS"):
         Settings.from_env({"JOBS_STORE_RETENTION_MS": raw})
+
+
+def test_from_env_reads_report_settings() -> None:
+    settings = Settings.from_env(
+        {
+            "JOBS_STORE_REPORT_MAX_ROUNDS": "5",
+            "JOBS_STORE_REPORT_TIMEOUT_MS": "2000",
+            "JOBS_STORE_REPORT_BACKOFF_BASE_MS": "100",
+            "JOBS_STORE_REPORT_BACKOFF_CAP_MS": "900",
+        }
+    )
+    assert settings == Settings(
+        report_max_rounds=5,
+        report_timeout_ms=2_000,
+        report_backoff_base_ms=100,
+        report_backoff_cap_ms=900,
+    )
+
+
+def test_report_settings_defaults() -> None:
+    settings = Settings()
+    assert (
+        settings.report_max_rounds,
+        settings.report_timeout_ms,
+        settings.report_backoff_base_ms,
+        settings.report_backoff_cap_ms,
+    ) == (3, 10_000, 10_000, 600_000)

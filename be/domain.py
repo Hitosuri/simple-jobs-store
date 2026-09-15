@@ -5,9 +5,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, NewType
+from typing import ClassVar, Literal, NewType
 
-from pydantic import JsonValue
+from pydantic import BaseModel, HttpUrl, JsonValue
 
 EpochMs = NewType("EpochMs", int)
 WorkerId = NewType("WorkerId", str)
@@ -46,6 +46,15 @@ class AttemptOutcome(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ReportStatus(StrEnum):
+    """Delivery state of a finished job's report."""
+
+    PENDING = "pending"
+    REPORTING = "reporting"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
 class ErrorCode(StrEnum):
     """Error codes returned in the API error envelope."""
 
@@ -58,6 +67,34 @@ class ErrorCode(StrEnum):
     LEASE_REJECTED = "LEASE_REJECTED"
     JOB_ALREADY_FINISHED = "JOB_ALREADY_FINISHED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+class CallbackConfig(BaseModel):
+    """Config of a `callback` report."""
+
+    url: HttpUrl
+
+
+class CallbackMethod(BaseModel):
+    """Report by POSTing the job outcome as JSON to `config.url`; 2xx means delivered."""
+
+    type: Literal["callback"]
+    config: CallbackConfig
+
+
+ReportMethod = CallbackMethod
+
+
+@dataclass(frozen=True, slots=True)
+class Report:
+    """A job's report methods and their delivery state; `status` is None until it finishes."""
+
+    methods: list[ReportMethod]
+    status: ReportStatus | None
+    round: int
+    cursor: int
+    next_at: EpochMs | None
+    error: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +142,7 @@ class Job:
     updated_at: EpochMs
     started_at: EpochMs | None
     finished_at: EpochMs | None
+    report: Report | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +166,15 @@ class Claim:
 
     job: Job
     lease: Lease
+
+
+@dataclass(frozen=True, slots=True)
+class ReportTask:
+    """One report send taken by the reporter; `token` goes back to `record_report`."""
+
+    job: Job
+    method: ReportMethod
+    token: EpochMs
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +251,10 @@ class Settings:
     backoff_cap_ms: int = 300_000
     cleanup_interval_ms: int = 5_000
     retention_ms: int = 604_800_000
+    report_max_rounds: int = 3
+    report_timeout_ms: int = 10_000
+    report_backoff_base_ms: int = 10_000
+    report_backoff_cap_ms: int = 600_000
 
     @property
     def db_path(self) -> str:
@@ -245,4 +296,12 @@ class Settings:
             backoff_cap_ms=positive_int("backoff_cap_ms", defaults.backoff_cap_ms),
             cleanup_interval_ms=positive_int("cleanup_interval_ms", defaults.cleanup_interval_ms),
             retention_ms=positive_int("retention_ms", defaults.retention_ms),
+            report_max_rounds=positive_int("report_max_rounds", defaults.report_max_rounds),
+            report_timeout_ms=positive_int("report_timeout_ms", defaults.report_timeout_ms),
+            report_backoff_base_ms=positive_int(
+                "report_backoff_base_ms", defaults.report_backoff_base_ms
+            ),
+            report_backoff_cap_ms=positive_int(
+                "report_backoff_cap_ms", defaults.report_backoff_cap_ms
+            ),
         )

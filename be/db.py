@@ -37,10 +37,19 @@ CREATE TABLE IF NOT EXISTS jobs (
   updated_at   INTEGER NOT NULL,
   started_at   INTEGER,
   finished_at  INTEGER,
+  report_methods TEXT,
+  report_status  TEXT
+                 CHECK (report_status IN ('pending','reporting','success','failed')),
+  report_round   INTEGER NOT NULL DEFAULT 0,
+  report_cursor  INTEGER NOT NULL DEFAULT 0,
+  report_next_at INTEGER,
+  report_error   TEXT,
   CHECK ((status = 'running') = (lease_token IS NOT NULL)),
   CHECK ((lease_token IS NULL) = (worker_id IS NULL)),
   CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
-  CHECK (lease_token IS NULL OR deadline_at IS NOT NULL)
+  CHECK (lease_token IS NULL OR deadline_at IS NOT NULL),
+  CHECK (report_status IS NULL OR report_methods IS NOT NULL),
+  CHECK (COALESCE(report_status IN ('pending','reporting'), 0) = (report_next_at IS NOT NULL))
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS job_attempts (
@@ -61,6 +70,7 @@ CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(status, type, available_at);
 CREATE INDEX IF NOT EXISTS jobs_lease ON jobs(status, lease_until);
 CREATE INDEX IF NOT EXISTS jobs_deadline ON jobs(status, deadline_at);
 CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(status, finished_at);
+CREATE INDEX IF NOT EXISTS jobs_report_due ON jobs(report_status, report_next_at);
 CREATE INDEX IF NOT EXISTS attempts_worker ON job_attempts(worker_id, job_id);
 """
 

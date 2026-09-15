@@ -97,7 +97,7 @@ The cleaner deletes `success` / `failed` / `cancelled` jobs whose `finishedAt` i
 
 | Call | Body / query | `data` |
 |---|---|---|
-| `POST /api/jobs` | `type` (non-empty), `description` (JSON), `maxAttempt?` (1..100, default 3), `maxRunMs?` (1..86 400 000, default 1 day), `priority?` (int32, default 0) | job, HTTP 201 |
+| `POST /api/jobs` | `type` (non-empty), `description` (JSON), `maxAttempt?` (1..100, default 3), `maxRunMs?` (1..86 400 000, default 1 day), `priority?` (int32, default 0), `reports?` (1..10 methods, §8) | job, HTTP 201 |
 | `GET /api/jobs` | `status?`, `type?`, `limit` 1..1000 (default 100) | jobs, newest first |
 | `GET /api/jobs/{id}` | - | `{job, attempts}`, attempts oldest first |
 | `POST /api/jobs/{id}/cancel` | - | job |
@@ -110,3 +110,23 @@ Objects:
   `ip` is the request's client address. `connected` means `leaseUntil > now`.
 - **attempt:** `attemptNo, workerId, outcome, error, errorDetail, startedAt, endedAt`.
 - **Never returned in reads:** the lease token.
+
+## 8. Reports to providers
+
+`reports` on create lists how to tell the provider a job finished, in backup order. Only type
+now: `{"type": "callback", "config": {"url": "https://..."}}` - the store POSTs JSON
+`{id, status, startedAt, finishedAt, result, error, errorDetail}` and only a 2xx counts
+(redirects are not followed).
+
+- **When:** the job becomes `success`, or `failed` with no attempts left (reported failure or
+  expiry). Not for `cancelled`, not for a failure that will be retried.
+- **`reportStatus`:** `null` (not finished) → `pending` → `reporting` → `success`, or back to
+  `pending` after a failed send, or `failed` after `REPORT_MAX_ROUNDS` passes over the list.
+- **Retries:** each failed send moves to the next method (`reportCursor`); after the last one
+  `reportRound` goes up and the cursor restarts. Before every retry the store waits
+  `min(REPORT_BACKOFF_BASE_MS × 2^(n-1), REPORT_BACKOFF_CAP_MS)`, `n` = failed sends so far.
+  2 methods × 3 rounds = at most 6 sends. `reportError` holds the last failure.
+- **Delivery:** at least once, by a background loop every `CLEANUP_INTERVAL_MS`, one send at a
+  time. A send cut off by a restart counts as failed (`interrupted`). Dedupe by `id`.
+- **Reclaim:** a `failed` job reclaimed by its worker clears its report; when it finishes again
+  the provider is told again, possibly after an earlier `failed` report.

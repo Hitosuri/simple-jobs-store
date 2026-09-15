@@ -106,7 +106,8 @@ Claim `data` (job trimmed):
 
 **Job fields:** `id, type, description, maxRunMs, workerId, leaseUntil, deadlineAt, availableAt,
 priority, status, attempt, maxAttempt, error, errorDetail, result, createdAt, updatedAt,
-startedAt, finishedAt`.
+startedAt, finishedAt, reports, reportStatus, reportRound, reportCursor, reportNextAt,
+reportError`.
 
 What each worker call means in practice:
 
