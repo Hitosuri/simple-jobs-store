@@ -4,6 +4,7 @@ A small at-least-once job queue over HTTP. Providers submit jobs, workers claim 
 lease, heartbeat while running, and report success or failure. Expired leases are revoked
 and retried with exponential backoff. Backed by a single SQLite file.
 
+- Submitting jobs or receiving callbacks? Read [**PROVIDER.md**](PROVIDER.md).
 - Building a worker? Read [**WORKER.md**](WORKER.md).
 - How the store decides claim order, retries and attempts: [be/README.md](be/README.md).
 - Getting job results pushed to you (`reports` callbacks): [be/README.md §8](be/README.md#8-reports-to-providers).
@@ -17,6 +18,7 @@ and retried with exponential backoff. Backed by a single SQLite file.
 | `be/`          | Store: Python 3.11, FastAPI, SQLite (stdlib `sqlite3`), managed by `uv` |
 | `fe/`          | Not created yet                                                         |
 | `.env.example` | Config template, copy to `.env`                                         |
+| `PROVIDER.md`  | Provider guide: submitting jobs, callbacks                              |
 | `WORKER.md`    | Worker developer guide                                                  |
 | `worker-example/` | Runnable Python worker (stdlib only)                                 |
 | `compose.yaml` | Docker Compose deploy of `be/` (image from `be/Dockerfile`)            |

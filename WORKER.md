@@ -120,7 +120,7 @@ What each worker call means in practice:
 - **Release:** job back to `pending` immediately.
 - **`GET /jobs/{jobId}`:** check a job's outcome after a lost response.
 
-Provider and listing endpoints: [README](README.md#api-overview).
+Provider and listing endpoints: [PROVIDER.md](PROVIDER.md).
 
 ## 4. Errors
 
