@@ -53,6 +53,7 @@ def test_report_once_falls_back_to_backup_after_backoff(
     assert [path for path, _ in sent] == ["/primary", "/backup"]
     assert sent[1][1] == {
         "id": claimed.job.id,
+        "type": claimed.job.type,
         "status": "success",
         "startedAt": "2027-01-15T08:00:00Z",
         "finishedAt": "2027-01-15T08:00:00Z",

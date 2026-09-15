@@ -121,6 +121,7 @@ signature:
 ```json
 {
   "id": 1,
+  "type": "resize",
   "status": "success",
   "startedAt": "2027-01-15T08:00:00Z",
   "finishedAt": "2027-01-15T08:00:42.125Z",

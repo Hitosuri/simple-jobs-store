@@ -212,6 +212,7 @@ class ReportBody(CamelModel):
     """JSON body a `callback` report POSTs to the provider."""
 
     id: JobId
+    type: str
     status: JobStatus
     started_at: datetime | None
     finished_at: datetime | None
@@ -224,6 +225,7 @@ class ReportBody(CamelModel):
         """Describe a finished job for its provider."""
         return cls(
             id=job.id,
+            type=job.type,
             status=job.status,
             started_at=_opt_dt(job.started_at),
             finished_at=_opt_dt(job.finished_at),

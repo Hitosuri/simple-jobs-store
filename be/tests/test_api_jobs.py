@@ -315,6 +315,7 @@ def test_report_body_is_camel_case_with_iso_times(
     job, _ = store.get_job(conn, job_id=JobId(claimed["job"]["id"]))
     assert ReportBody.build(job).model_dump(mode="json", by_alias=True) == {
         "id": claimed["job"]["id"],
+        "type": "t",
         "status": "failed",
         "startedAt": START_ISO,
         "finishedAt": START_ISO,

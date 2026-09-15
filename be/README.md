@@ -115,7 +115,7 @@ Objects:
 
 `reports` on create lists how to tell the provider a job finished, in backup order. Only type
 now: `{"type": "callback", "config": {"url": "https://..."}}` - the store POSTs JSON
-`{id, status, startedAt, finishedAt, result, error, errorDetail}` and only a 2xx counts
+`{id, type, status, startedAt, finishedAt, result, error, errorDetail}` and only a 2xx counts
 (redirects are not followed).
 
 - **When:** the job becomes `success`, or `failed` with no attempts left (reported failure or
