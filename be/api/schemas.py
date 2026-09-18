@@ -1,10 +1,11 @@
 """Request/response models and conversion from domain rows."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, Self
 
 from fastapi import Body
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from pydantic.alias_generators import to_camel
 
 from domain import (
@@ -17,11 +18,14 @@ from domain import (
     JobStatus,
     Lease,
     LeaseToken,
+    Progress,
     ReportMethod,
     ReportStatus,
     Worker,
     WorkerId,
 )
+
+logger = logging.getLogger(__name__)
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -125,6 +129,47 @@ class LeaseBody(CamelModel):
     lease_token: LeaseToken = Field(min_length=1)
 
 
+class JobHeartbeatBody(LeaseBody):
+    """Body of `POST /api/jobs/{id}/heartbeat`.
+
+    `progress` is taken raw so a malformed value can be dropped without rejecting the heartbeat.
+    """
+
+    progress: JsonValue = None
+
+    def valid_progress(self) -> Progress | None:
+        """Return the progress if it is valid; None when it is missing or invalid."""
+        if self.progress is None:
+            return None
+        try:
+            return Progress.model_validate(self.progress)
+        except ValidationError:
+            logger.warning("dropped invalid progress from worker %s", self.worker_id)
+            return None
+
+
+class ProgressOut(CamelModel):
+    """A job's progress; `percent` is derived from `current`/`total` when the worker sent none."""
+
+    current: int | None
+    total: int | None
+    percent: float | None
+    message: str | None
+
+    @classmethod
+    def build(cls, progress: Progress) -> Self:
+        """Convert stored progress."""
+        percent = progress.percent
+        if percent is None and progress.current is not None and progress.total is not None:
+            percent = min(progress.current / progress.total * 100, 100.0)
+        return cls(
+            current=progress.current,
+            total=progress.total,
+            percent=percent,
+            message=progress.message,
+        )
+
+
 class FinishSuccessBody(LeaseBody):
     """Finish body for a successful job."""
 
@@ -173,6 +218,7 @@ class JobOut(CamelModel):
     report_cursor: int
     report_next_at: datetime | None
     report_error: str | None
+    progress: ProgressOut | None
 
     @classmethod
     def build(cls, job: Job) -> Self:
@@ -205,6 +251,7 @@ class JobOut(CamelModel):
             report_cursor=0 if report is None else report.cursor,
             report_next_at=_opt_dt(None if report is None else report.next_at),
             report_error=None if report is None else report.error,
+            progress=None if job.progress is None else ProgressOut.build(job.progress),
         )
 
 
@@ -273,19 +320,21 @@ class JobDetailOut(CamelModel):
 
 
 class JobLeaseOut(CamelModel):
-    """Job heartbeat response."""
+    """Job heartbeat response. `progress_accepted` is None when no progress was sent."""
 
     lease_until: datetime
     lease_ms_remaining: int
     deadline_at: datetime
+    progress_accepted: bool | None
 
     @classmethod
-    def build(cls, lease: Lease, now: EpochMs) -> Self:
+    def build(cls, lease: Lease, now: EpochMs, *, progress_accepted: bool | None) -> Self:
         """Convert a lease, computing the remaining time against `now`."""
         return cls(
             lease_until=_dt(lease.until),
             lease_ms_remaining=_remaining(lease.until, now),
             deadline_at=_dt(lease.deadline_at),
+            progress_accepted=progress_accepted,
         )
 
 

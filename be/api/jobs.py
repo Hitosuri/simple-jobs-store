@@ -14,6 +14,7 @@ from api.schemas import (
     FinishSuccessBody,
     JobCreateBody,
     JobDetailOut,
+    JobHeartbeatBody,
     JobLeaseOut,
     JobOut,
     LeaseBody,
@@ -83,9 +84,10 @@ def cancel_job(job_id: JobIdPath, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
 
 @router.post("/{job_id}/heartbeat")
 def heartbeat_job(
-    job_id: JobIdPath, body: LeaseBody, conn: ConnDep, now: NowDep, settings: SettingsDep
+    job_id: JobIdPath, body: JobHeartbeatBody, conn: ConnDep, now: NowDep, settings: SettingsDep
 ) -> ApiOk[JobLeaseOut]:
-    """Extend the job lease (reclaiming it if it had expired)."""
+    """Extend the job lease (reclaiming it if it had expired); invalid progress is dropped."""
+    progress = body.valid_progress()
     lease = store.heartbeat_job(
         conn,
         now=now,
@@ -93,8 +95,10 @@ def heartbeat_job(
         job_id=JobId(job_id),
         worker_id=body.worker_id,
         token=body.lease_token,
+        progress=progress,
     )
-    return ApiOk[JobLeaseOut](data=JobLeaseOut.build(lease, now))
+    accepted = None if body.progress is None else progress is not None
+    return ApiOk[JobLeaseOut](data=JobLeaseOut.build(lease, now, progress_accepted=accepted))
 
 
 @router.post("/{job_id}/finish")

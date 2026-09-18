@@ -85,7 +85,7 @@ Branch on `ok` and `error.code`, not on HTTP status or `message`.
 | `PUT /workers/{workerId}` | `name` (non-empty), `concurrentLimit` (≥ 1) | worker |
 | `POST /workers/{workerId}/heartbeat` | - | `leaseUntil, leaseMsRemaining` |
 | `POST /jobs/claim` | `workerId, type` | claim, or `null` if nothing to do |
-| `POST /jobs/{jobId}/heartbeat` | `workerId, leaseToken` | `leaseUntil, leaseMsRemaining, deadlineAt` |
+| `POST /jobs/{jobId}/heartbeat` | `workerId, leaseToken, progress?` | `leaseUntil, leaseMsRemaining, deadlineAt, progressAccepted` |
 | `POST /jobs/{jobId}/finish` | `status: "success", workerId, leaseToken, result?` (default `null`) | job |
 | | `status: "failed", workerId, leaseToken, error` (non-empty), `errorDetail?` | job |
 | `POST /jobs/{jobId}/release` | `workerId, leaseToken` | `null` |
@@ -107,9 +107,33 @@ Claim `data` (job trimmed):
 **Job fields:** `id, type, description, maxRunMs, workerId, leaseUntil, deadlineAt, availableAt,
 priority, status, attempt, maxAttempt, error, errorDetail, result, createdAt, updatedAt,
 startedAt, finishedAt, reports, reportStatus, reportRound, reportCursor, reportNextAt,
-reportError`.
+reportError, progress`.
 
 What each worker call means in practice:
+
+- **Progress:** optional `progress` on the job heartbeat. Every key is optional; send what
+  you know:
+
+  | Key | Rule |
+  |---|---|
+  | `current` | integer ≥ 0 (items done, bytes, …) |
+  | `total` | integer ≥ 1; needs `current` |
+  | `percent` | number 0..100 |
+  | `message` | string |
+
+  At least one of `current`, `percent`, `message` is required, and no other keys are allowed.
+  Examples: `{"current": 40, "total": 100}`, `{"current": 1234}` (total unknown),
+  `{"percent": 37.5}`, `{"message": "uploading"}`.
+  - Each value **replaces** the previous one. Omit `progress` (or send `null`) to keep it.
+  - **Invalid progress is dropped, not rejected.** The heartbeat still succeeds and the lease is
+    extended; the old progress stays. The response's `progressAccepted` says what happened:
+    `true` stored, `false` dropped, `null` no progress sent. Log `false`; it is a bug on your side.
+  - Readers see `percent` computed from `current / total` (capped at 100) when you send no
+    `percent`. A `percent` you send wins.
+  - A new claim starts with `progress: null`. Progress kept through lease expiry/reclaim and
+    after finish.
+  - Want progress to show sooner? Send an extra heartbeat when it changes, at most about 1/s.
+    Every heartbeat is a write.
 
 - **Claim:** one type per call; for several types, call it once per type. The store picks the
   job, and you can't choose. `description` is your input. If `job.attempt > 1`, this job was

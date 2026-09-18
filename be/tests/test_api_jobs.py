@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from typing import Any
 
@@ -148,12 +149,88 @@ def test_job_heartbeat_extends_and_rejects_wrong_token(
         "leaseUntil": "2027-01-15T08:00:40Z",
         "leaseMsRemaining": settings.job_lease_ms,
         "deadlineAt": "2027-01-16T08:00:00Z",
+        "progressAccepted": None,
     }
     wrong = client.post(
         f"/api/jobs/{job_id}/heartbeat", json={"workerId": "w1", "leaseToken": "wrong"}
     )
     assert wrong.status_code == 409
     assert error_code(wrong) == "LEASE_REJECTED"
+
+
+def send_progress(client: TestClient, claimed: Any, progress: Any) -> Any:
+    job_id = claimed["job"]["id"]
+    resp = client.post(
+        f"/api/jobs/{job_id}/heartbeat", json={**lease_body(claimed), "progress": progress}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["progressAccepted"] is True
+    return client.get(f"/api/jobs/{job_id}").json()["data"]["job"]["progress"]
+
+
+def full(**fields: Any) -> dict[str, Any]:
+    return {"current": None, "total": None, "percent": None, "message": None, **fields}
+
+
+@pytest.mark.parametrize(
+    ("sent", "shown"),
+    [
+        ({"current": 40, "total": 100}, full(current=40, total=100, percent=40.0)),
+        ({"current": 1234}, full(current=1234)),
+        ({"percent": 37.5}, full(percent=37.5)),
+        ({"message": "resizing"}, full(message="resizing")),
+        (
+            {"current": 5, "total": 10, "percent": 70, "message": "m"},
+            full(current=5, total=10, percent=70.0, message="m"),
+        ),
+        ({"current": 150, "total": 100}, full(current=150, total=100, percent=100.0)),
+    ],
+)
+def test_job_heartbeat_progress_is_shown_with_derived_percent(
+    client: TestClient, sent: Any, shown: Any
+) -> None:
+    register(client)
+    create(client)
+    claimed = claim(client)
+    assert claimed["job"]["progress"] is None
+    assert send_progress(client, claimed, sent) == shown
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {},
+        {"total": 10},
+        {"current": -1},
+        {"current": 1, "total": 0},
+        {"percent": -0.1},
+        {"percent": 100.5},
+        {"percent": float("nan")},
+        {"current": 1, "unknown": 2},
+        {"message": 5},
+        "half",
+        [1, 2],
+    ],
+)
+def test_job_heartbeat_with_invalid_progress_extends_lease_but_drops_progress(
+    client: TestClient, clock: FakeClock, settings: Settings, bad: Any
+) -> None:
+    register(client)
+    create(client)
+    claimed = claim(client)
+    kept = send_progress(client, claimed, {"current": 1})
+    clock.advance(10_000)
+    job_id = claimed["job"]["id"]
+    # httpx refuses to encode NaN, so the body is serialized by hand.
+    resp = client.post(
+        f"/api/jobs/{job_id}/heartbeat",
+        content=json.dumps({**lease_body(claimed), "progress": bad}),
+        headers={"content-type": "application/json"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["leaseMsRemaining"] == settings.job_lease_ms
+    assert resp.json()["data"]["progressAccepted"] is False
+    assert client.get(f"/api/jobs/{job_id}").json()["data"]["job"]["progress"] == kept
 
 
 def test_finish_success_and_failed(client: TestClient) -> None:

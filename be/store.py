@@ -22,6 +22,7 @@ from domain import (
     Lease,
     LeaseRejectedError,
     LeaseToken,
+    Progress,
     Report,
     ReportMethod,
     ReportStatus,
@@ -112,6 +113,7 @@ def _to_job(row: sqlite3.Row) -> Job:
         started_at=_opt_ms(row["started_at"]),
         finished_at=_opt_ms(row["finished_at"]),
         report=report,
+        progress=None if row["progress"] is None else Progress.model_validate_json(row["progress"]),
     )
 
 
@@ -370,7 +372,8 @@ def claim_job(
             """
             UPDATE jobs SET status = 'running', worker_id = :worker_id, lease_token = :token,
                             lease_until = :until, deadline_at = :deadline_at,
-                            attempt = attempt + 1, started_at = :now, updated_at = :now
+                            attempt = attempt + 1, started_at = :now, progress = NULL,
+                            updated_at = :now
             WHERE id = :id
             """,
             {
@@ -573,6 +576,7 @@ def heartbeat_job(
     job_id: JobId,
     worker_id: WorkerId,
     token: LeaseToken,
+    progress: Progress | None = None,
 ) -> Lease:
     """Extend a job lease, reclaiming the job first if the lease had expired.
 
@@ -583,6 +587,7 @@ def heartbeat_job(
         job_id: Job being worked on.
         worker_id: Worker that holds the lease.
         token: Lease token from the claim.
+        progress: Replaces the job's progress; None keeps the current one.
 
     Returns:
         The extended lease; `until` never passes `deadline_at`.
@@ -605,8 +610,14 @@ def heartbeat_job(
             lease, until=EpochMs(min(now + settings.job_lease_ms, lease.deadline_at))
         )
         conn.execute(
-            "UPDATE jobs SET lease_until = ?, updated_at = ? WHERE id = ?",
-            (extended.until, now, job_id),
+            "UPDATE jobs SET lease_until = ?, updated_at = ?, progress = COALESCE(?, progress)"
+            " WHERE id = ?",
+            (
+                extended.until,
+                now,
+                None if progress is None else progress.model_dump_json(exclude_none=True),
+                job_id,
+            ),
         )
     return extended
 

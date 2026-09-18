@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   report_cursor  INTEGER NOT NULL DEFAULT 0,
   report_next_at INTEGER,
   report_error   TEXT,
+  progress       TEXT,
   CHECK ((status = 'running') = (lease_token IS NOT NULL)),
   CHECK ((lease_token IS NULL) = (worker_id IS NULL)),
   CHECK ((lease_token IS NULL) = (lease_until IS NULL)),

@@ -21,6 +21,7 @@ from domain import (
     Lease,
     LeaseRejectedError,
     LeaseToken,
+    Progress,
     Report,
     ReportMethod,
     ReportStatus,
@@ -364,6 +365,48 @@ def test_job_heartbeat_extends_lease_but_not_deadline(
     assert lease.until == clock.now + settings.job_lease_ms
     assert lease.deadline_at == claimed.lease.deadline_at
     assert lease.token == claimed.lease.token
+
+
+def test_job_heartbeat_stores_progress_and_keeps_it_when_omitted(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings)
+    claimed = claim(conn, clock, settings, wid)
+    assert claimed.job.progress is None
+    progress = Progress(current=3, total=10, message="step")
+    store.heartbeat_job(
+        conn,
+        now=clock(),
+        settings=settings,
+        job_id=claimed.job.id,
+        worker_id=wid,
+        token=claimed.lease.token,
+        progress=progress,
+    )
+    heartbeat(conn, clock, settings, claimed)
+    job, _ = store.get_job(conn, job_id=claimed.job.id)
+    assert job.progress == progress
+
+
+def test_claim_clears_progress_of_the_previous_attempt(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings)
+    first = claim(conn, clock, settings, wid)
+    store.heartbeat_job(
+        conn,
+        now=clock(),
+        settings=settings,
+        job_id=first.job.id,
+        worker_id=wid,
+        token=first.lease.token,
+        progress=Progress(percent=50),
+    )
+    release(conn, clock, settings, first)
+    second = claim(conn, clock, settings, wid)
+    assert second.job.progress is None
 
 
 def test_job_heartbeat_with_wrong_token_is_rejected(

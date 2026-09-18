@@ -93,6 +93,7 @@ curl -X POST http://127.0.0.1:8000/api/jobs -H "Content-Type: application/json" 
 | `availableAt` | While `pending`: when the job can be claimed (later than now during retry backoff) |
 | `startedAt` / `finishedAt` | Latest claim / when it reached `success`, `failed` or `cancelled` |
 | `reports`, `reportStatus`, `reportRound`, `reportCursor`, `reportNextAt`, `reportError` | Callback delivery, §4 |
+| `progress` | `null`, or the worker's latest `{current, total, percent, message}` (any may be `null`). `percent` is 0..100, derived from `current / total` when the worker sent none; `null` means unknown (show a spinner). Reset on each new claim, kept after finish. Poll `GET /jobs/{id}`; not sent in callbacks |
 
 Other fields (`workerId`, `leaseUntil`, `deadlineAt`, `createdAt`, `updatedAt`, …) are for
 debugging. **Attempt:** `attemptNo, workerId, outcome, error, errorDetail, startedAt, endedAt`;

@@ -99,7 +99,7 @@ All routes are under `/api` and return `{"ok": true, "data": ...}` or
 | POST   | `/api/workers/{workerId}/heartbeat` | worker   | Keep worker alive                                               |
 | GET    | `/api/workers`                      | anyone   | List workers                                                    |
 | POST   | `/api/jobs/claim`                   | worker   | Claim next job of a type                                        |
-| POST   | `/api/jobs/{id}/heartbeat`          | worker   | Extend job lease                                                |
+| POST   | `/api/jobs/{id}/heartbeat`          | worker   | Extend job lease, optionally report progress                    |
 | POST   | `/api/jobs/{id}/finish`             | worker   | Report success or failure                                       |
 | POST   | `/api/jobs/{id}/release`            | worker   | Give a job back without using an attempt                        |
 

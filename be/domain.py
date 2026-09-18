@@ -5,9 +5,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, Literal, NewType
+from typing import ClassVar, Literal, NewType, Self
 
-from pydantic import BaseModel, HttpUrl, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue, model_validator
 
 EpochMs = NewType("EpochMs", int)
 WorkerId = NewType("WorkerId", str)
@@ -85,6 +85,30 @@ class CallbackMethod(BaseModel):
 ReportMethod = CallbackMethod
 
 
+class Progress(BaseModel):
+    """Latest progress a worker sent on a job heartbeat. Every field is optional.
+
+    `total` needs `current`. `percent` may come with or without `current`/`total`.
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    current: int | None = Field(default=None, ge=0)
+    total: int | None = Field(default=None, ge=1)
+    percent: float | None = Field(default=None, ge=0, le=100)
+    message: str | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.total is not None and self.current is None:
+            msg = "total requires current"
+            raise ValueError(msg)
+        if self.current is None and self.percent is None and self.message is None:
+            msg = "progress is empty"
+            raise ValueError(msg)
+        return self
+
+
 @dataclass(frozen=True, slots=True)
 class Report:
     """A job's report methods and their delivery state; `status` is None until it finishes."""
@@ -143,6 +167,7 @@ class Job:
     started_at: EpochMs | None
     finished_at: EpochMs | None
     report: Report | None
+    progress: Progress | None
 
 
 @dataclass(frozen=True, slots=True)
