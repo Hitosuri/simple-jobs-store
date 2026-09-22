@@ -1,5 +1,6 @@
 """Job routes."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, status
@@ -20,6 +21,8 @@ from api.schemas import (
     LeaseBody,
 )
 from domain import FailureReport, JobId, JobStatus, SuccessReport
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -65,7 +68,10 @@ def claim_job(
     claim = store.claim_job(
         conn, now=now, settings=settings, worker_id=body.worker_id, job_type=body.type
     )
-    return ApiOk[ClaimOut | None](data=None if claim is None else ClaimOut.build(claim, now))
+    if claim is None:
+        return ApiOk[ClaimOut | None](data=None)
+    logger.info("job %s claimed by worker %s", claim.job.id, body.worker_id)
+    return ApiOk[ClaimOut | None](data=ClaimOut.build(claim, now))
 
 
 @router.get("/{job_id}")

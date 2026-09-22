@@ -3,11 +3,14 @@
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, closing
+from http import HTTPStatus
 
 import httpx2
 from fastapi import FastAPI
+from typing_extensions import override
 
 import reports
 import store
@@ -19,6 +22,25 @@ from db import connect, init_schema
 from domain import Clock, Settings
 
 logger = logging.getLogger(__name__)
+
+_POLLING = re.compile(
+    r"POST /api/jobs/claim|POST /api/(jobs|workers)/[^/]+/heartbeat|GET /api/workers"
+)
+
+
+class PollingAccessFilter(logging.Filter):
+    """Drop successful claim, heartbeat and worker-list polling from uvicorn's access log."""
+
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Keep the record unless it is a polling request answered below 400."""
+        match record.args:
+            case (_, str() as method, str() as path, _, int() as status):
+                if status >= HTTPStatus.BAD_REQUEST:
+                    return True
+                return not _POLLING.fullmatch(f"{method} {path.partition('?')[0]}")
+            case _:
+                return True
 
 
 def _cleanup_once(settings: Settings, clock: Clock) -> None:
