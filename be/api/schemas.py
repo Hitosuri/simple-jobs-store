@@ -5,10 +5,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, Self
 
 from fastapi import Body
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic.alias_generators import to_camel
 
 from domain import (
+    MAX_PROGRESS_STEPS,
     Attempt,
     AttemptOutcome,
     Claim,
@@ -18,14 +19,19 @@ from domain import (
     JobStatus,
     Lease,
     LeaseToken,
-    Progress,
+    ProgressStep,
     ReportMethod,
     ReportStatus,
+    StepStatus,
     Worker,
     WorkerId,
 )
 
 logger = logging.getLogger(__name__)
+
+_STEPS: TypeAdapter[list[ProgressStep]] = TypeAdapter(
+    Annotated[list[ProgressStep], Field(min_length=1, max_length=MAX_PROGRESS_STEPS)]
+)
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -137,36 +143,43 @@ class JobHeartbeatBody(LeaseBody):
 
     progress: JsonValue = None
 
-    def valid_progress(self) -> Progress | None:
-        """Return the progress if it is valid; None when it is missing or invalid."""
+    def valid_progress(self) -> list[ProgressStep] | None:
+        """Return the progress steps if valid; None when missing, invalid or ids repeat."""
         if self.progress is None:
             return None
         try:
-            return Progress.model_validate(self.progress)
+            steps = _STEPS.validate_python(self.progress)
         except ValidationError:
+            steps = None
+        if steps is None or len({step.id for step in steps}) != len(steps):
             logger.warning("dropped invalid progress from worker %s", self.worker_id)
             return None
+        return steps
 
 
-class ProgressOut(CamelModel):
-    """A job's progress; `percent` is derived from `current`/`total` when the worker sent none."""
+class ProgressStepOut(CamelModel):
+    """One progress step; `percent` is derived from `current`/`total` when the worker sent none."""
 
+    id: str
+    status: StepStatus
     current: int | None
     total: int | None
     percent: float | None
     message: str | None
 
     @classmethod
-    def build(cls, progress: Progress) -> Self:
-        """Convert stored progress."""
-        percent = progress.percent
-        if percent is None and progress.current is not None and progress.total is not None:
-            percent = min(progress.current / progress.total * 100, 100.0)
+    def build(cls, step: ProgressStep) -> Self:
+        """Convert a stored step."""
+        percent = step.percent
+        if percent is None and step.current is not None and step.total is not None:
+            percent = min(step.current / step.total * 100, 100.0)
         return cls(
-            current=progress.current,
-            total=progress.total,
+            id=step.id,
+            status=step.status,
+            current=step.current,
+            total=step.total,
             percent=percent,
-            message=progress.message,
+            message=step.message,
         )
 
 
@@ -218,7 +231,7 @@ class JobOut(CamelModel):
     report_cursor: int
     report_next_at: datetime | None
     report_error: str | None
-    progress: ProgressOut | None
+    progress: list[ProgressStepOut] | None
 
     @classmethod
     def build(cls, job: Job) -> Self:
@@ -251,7 +264,9 @@ class JobOut(CamelModel):
             report_cursor=0 if report is None else report.cursor,
             report_next_at=_opt_dt(None if report is None else report.next_at),
             report_error=None if report is None else report.error,
-            progress=None if job.progress is None else ProgressOut.build(job.progress),
+            progress=None
+            if job.progress is None
+            else [ProgressStepOut.build(step) for step in job.progress],
         )
 
 

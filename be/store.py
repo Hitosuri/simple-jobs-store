@@ -8,6 +8,7 @@ from pydantic import JsonValue, TypeAdapter
 
 from db import transaction
 from domain import (
+    MAX_PROGRESS_STEPS,
     TERMINAL_STATUSES,
     Attempt,
     AttemptOutcome,
@@ -22,7 +23,7 @@ from domain import (
     Lease,
     LeaseRejectedError,
     LeaseToken,
-    Progress,
+    ProgressStep,
     Report,
     ReportMethod,
     ReportStatus,
@@ -37,6 +38,7 @@ from domain import (
 
 _JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _METHODS: TypeAdapter[list[ReportMethod]] = TypeAdapter(list[ReportMethod])
+_STEPS: TypeAdapter[list[ProgressStep]] = TypeAdapter(list[ProgressStep])
 
 
 def _one(cursor: sqlite3.Cursor) -> sqlite3.Row | None:
@@ -113,7 +115,7 @@ def _to_job(row: sqlite3.Row) -> Job:
         started_at=_opt_ms(row["started_at"]),
         finished_at=_opt_ms(row["finished_at"]),
         report=report,
-        progress=None if row["progress"] is None else Progress.model_validate_json(row["progress"]),
+        progress=None if row["progress"] is None else _STEPS.validate_json(row["progress"]),
     )
 
 
@@ -576,8 +578,8 @@ def heartbeat_job(
     job_id: JobId,
     worker_id: WorkerId,
     token: LeaseToken,
-    progress: Progress | None = None,
-) -> Lease:
+    progress: list[ProgressStep] | None = None,
+) -> tuple[Lease, bool]:
     """Extend a job lease, reclaiming the job first if the lease had expired.
 
     Args:
@@ -587,17 +589,19 @@ def heartbeat_job(
         job_id: Job being worked on.
         worker_id: Worker that holds the lease.
         token: Lease token from the claim.
-        progress: Replaces the job's progress; None keeps the current one.
+        progress: Steps to upsert by id: a known id is replaced in place, a new one is appended.
+            None keeps the current progress.
 
     Returns:
-        The extended lease; `until` never passes `deadline_at`.
+        The extended lease (`until` never passes `deadline_at`), and whether `progress` was
+        stored. It is dropped when the merged steps would exceed `MAX_PROGRESS_STEPS`.
 
     Raises:
         JobNotFoundError: No such job.
         LeaseRejectedError: Token neither valid nor reclaimable; the worker must abort.
     """
     with transaction(conn):
-        _, lease = _hold(
+        job, lease = _hold(
             conn,
             now=now,
             settings=settings,
@@ -609,17 +613,22 @@ def heartbeat_job(
         extended = replace(
             lease, until=EpochMs(min(now + settings.job_lease_ms, lease.deadline_at))
         )
+        steps = {step.id: step for step in job.progress or []}
+        steps.update((step.id, step) for step in progress or [])
+        stored = progress is not None and len(steps) <= MAX_PROGRESS_STEPS
         conn.execute(
             "UPDATE jobs SET lease_until = ?, updated_at = ?, progress = COALESCE(?, progress)"
             " WHERE id = ?",
             (
                 extended.until,
                 now,
-                None if progress is None else progress.model_dump_json(exclude_none=True),
+                _STEPS.dump_json(list(steps.values()), exclude_none=True).decode()
+                if stored
+                else None,
                 job_id,
             ),
         )
-    return extended
+    return extended, stored
 
 
 def finish_job(

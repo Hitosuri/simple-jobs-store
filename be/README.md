@@ -75,9 +75,10 @@ checks the worker lease.
   - Release does not reclaim.
   - `deadline_exceeded` is never reclaimable, because reclaim doesn't reset the deadline.
 - **Heartbeat** extends `leaseUntil = min(now + job lease, deadlineAt)`.
-  - A valid `progress` replaces the job's progress in the same transaction; an invalid one is
-    dropped (`progressAccepted: false`) without failing the heartbeat. Claim resets progress to
-    `null`; reclaim and finish keep it.
+  - A valid `progress` step list is upserted by step `id` into the job's progress in the same
+    transaction (known id replaced in place, new id appended). An invalid list, or one that
+    would grow the job past `MAX_PROGRESS_STEPS` (100), is dropped (`progressAccepted: false`)
+    without failing the heartbeat. Claim resets progress to `null`; reclaim and finish keep it.
 - **`leaseMsRemaining`** is computed from `now`, which the store reads before it takes the write
   lock. Under contention it can be up to the 5 s SQLite busy timeout stale.
 

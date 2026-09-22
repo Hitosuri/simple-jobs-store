@@ -111,25 +111,37 @@ reportError, progress`.
 
 What each worker call means in practice:
 
-- **Progress:** optional `progress` on the job heartbeat. Every key is optional; send what
-  you know:
+- **Progress:** optional `progress` on the job heartbeat: a list of 1..100 steps, each id
+  at most once. A step:
 
   | Key | Rule |
   |---|---|
+  | `id` | required; string, 1..32 chars, you choose it |
+  | `status` | required; `pending`, `running`, `done`, `failed`, `skipped` |
   | `current` | integer ≥ 0 (items done, bytes, …) |
   | `total` | integer ≥ 1; needs `current` |
   | `percent` | number 0..100 |
   | `message` | string |
 
-  At least one of `current`, `percent`, `message` is required, and no other keys are allowed.
-  Examples: `{"current": 40, "total": 100}`, `{"current": 1234}` (total unknown),
-  `{"percent": 37.5}`, `{"message": "uploading"}`.
-  - Each value **replaces** the previous one. Omit `progress` (or send `null`) to keep it.
+  Only `id` and `status` are required; send the others when you know them. No other keys are
+  allowed. Examples: `[{"id": "upload", "status": "running"}]` (no numbers known),
+  `[{"id": "resize", "status": "running", "current": 40, "total": 100}]`.
+  - The store **upserts by `id`**: a known id is replaced whole (keys you omit become `null`),
+    a new id is appended. Order is the order ids were first seen. Steps are never removed; mark
+    a dropped step `skipped`.
+  - Send only the steps that changed:
+    - One step: send just that step, e.g. `[{"id": "main", "status": "running", "percent": 40}]`.
+    - Sequential steps: send the full list once (the rest `pending`) to show the plan, then only
+      the step that changed.
+    - Parallel steps: each one sends its own step.
+  - Omit `progress` (or send `null`) to keep it.
   - **Invalid progress is dropped, not rejected.** The heartbeat still succeeds and the lease is
-    extended; the old progress stays. The response's `progressAccepted` says what happened:
-    `true` stored, `false` dropped, `null` no progress sent. Log `false`; it is a bug on your side.
-  - Readers see `percent` computed from `current / total` (capped at 100) when you send no
-    `percent`. A `percent` you send wins.
+    extended; the old progress stays. The whole list is dropped when any step is invalid or ids
+    repeat, and when it would grow the job past 100 steps. The response's `progressAccepted`
+    says what happened: `true` stored, `false` dropped, `null` no progress sent. Log `false`;
+    it is a bug on your side.
+  - Readers see each step's `percent` computed from `current / total` (capped at 100) when you
+    send no `percent`. A `percent` you send wins. There is no overall percent.
   - A new claim starts with `progress: null`. Progress kept through lease expiry/reclaim and
     after finish.
   - Want progress to show sooner? Send an extra heartbeat when it changes, at most about 1/s.

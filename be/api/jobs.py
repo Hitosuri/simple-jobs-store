@@ -88,7 +88,7 @@ def heartbeat_job(
 ) -> ApiOk[JobLeaseOut]:
     """Extend the job lease (reclaiming it if it had expired); invalid progress is dropped."""
     progress = body.valid_progress()
-    lease = store.heartbeat_job(
+    lease, stored = store.heartbeat_job(
         conn,
         now=now,
         settings=settings,
@@ -97,7 +97,7 @@ def heartbeat_job(
         token=body.lease_token,
         progress=progress,
     )
-    accepted = None if body.progress is None else progress is not None
+    accepted = None if body.progress is None else stored
     return ApiOk[JobLeaseOut](data=JobLeaseOut.build(lease, now, progress_accepted=accepted))
 
 

@@ -8,6 +8,7 @@ import pytest
 import store
 from db import connect
 from domain import (
+    MAX_PROGRESS_STEPS,
     AttemptOutcome,
     CallbackMethod,
     Claim,
@@ -21,12 +22,13 @@ from domain import (
     Lease,
     LeaseRejectedError,
     LeaseToken,
-    Progress,
+    ProgressStep,
     Report,
     ReportMethod,
     ReportStatus,
     ReportTask,
     Settings,
+    StepStatus,
     SuccessReport,
     WorkerId,
     WorkerLeaseExpiredError,
@@ -312,7 +314,7 @@ def test_concurrent_claims_never_share_a_job(
 def heartbeat(
     conn: sqlite3.Connection, clock: FakeClock, settings: Settings, claimed: Claim
 ) -> Lease:
-    return store.heartbeat_job(
+    lease, _ = store.heartbeat_job(
         conn,
         now=clock(),
         settings=settings,
@@ -320,6 +322,7 @@ def heartbeat(
         worker_id=claimed.lease.worker_id,
         token=claimed.lease.token,
     )
+    return lease
 
 
 def finish(
@@ -367,26 +370,69 @@ def test_job_heartbeat_extends_lease_but_not_deadline(
     assert lease.token == claimed.lease.token
 
 
-def test_job_heartbeat_stores_progress_and_keeps_it_when_omitted(
+def step(
+    step_id: str,
+    status: StepStatus = StepStatus.RUNNING,
+    current: int | None = None,
+    total: int | None = None,
+) -> ProgressStep:
+    return ProgressStep(id=step_id, status=status, current=current, total=total)
+
+
+def send_steps(
+    conn: sqlite3.Connection,
+    clock: FakeClock,
+    settings: Settings,
+    claimed: Claim,
+    *steps: ProgressStep,
+) -> bool:
+    _, stored = store.heartbeat_job(
+        conn,
+        now=clock(),
+        settings=settings,
+        job_id=claimed.job.id,
+        worker_id=claimed.lease.worker_id,
+        token=claimed.lease.token,
+        progress=list(steps),
+    )
+    return stored
+
+
+def test_job_heartbeat_upserts_progress_steps_by_id_and_keeps_them_when_omitted(
     conn: sqlite3.Connection, clock: FakeClock, settings: Settings
 ) -> None:
     wid = add_worker(conn, clock, settings)
     add_job(conn, clock, settings)
     claimed = claim(conn, clock, settings, wid)
     assert claimed.job.progress is None
-    progress = Progress(current=3, total=10, message="step")
-    store.heartbeat_job(
-        conn,
-        now=clock(),
-        settings=settings,
-        job_id=claimed.job.id,
-        worker_id=wid,
-        token=claimed.lease.token,
-        progress=progress,
+    pending = StepStatus.PENDING
+    assert send_steps(
+        conn, clock, settings, claimed, step("a", pending), step("b", pending), step("c", pending)
     )
+    assert send_steps(conn, clock, settings, claimed, step("b", current=3, total=10))
+    assert send_steps(conn, clock, settings, claimed, step("d"), step("a", StepStatus.DONE))
     heartbeat(conn, clock, settings, claimed)
     job, _ = store.get_job(conn, job_id=claimed.job.id)
-    assert job.progress == progress
+    assert job.progress == [
+        step("a", StepStatus.DONE),
+        step("b", current=3, total=10),
+        step("c", pending),
+        step("d"),
+    ]
+
+
+def test_job_heartbeat_drops_progress_that_would_exceed_the_step_limit(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings)
+    claimed = claim(conn, clock, settings, wid)
+    full = [step(f"s{i}") for i in range(MAX_PROGRESS_STEPS)]
+    assert send_steps(conn, clock, settings, claimed, *full)
+    assert not send_steps(conn, clock, settings, claimed, step("s0", StepStatus.DONE), step("x"))
+    job, _ = store.get_job(conn, job_id=claimed.job.id)
+    assert job.progress == full
+    assert send_steps(conn, clock, settings, claimed, step("s0", StepStatus.DONE))
 
 
 def test_claim_clears_progress_of_the_previous_attempt(
@@ -395,15 +441,7 @@ def test_claim_clears_progress_of_the_previous_attempt(
     wid = add_worker(conn, clock, settings)
     add_job(conn, clock, settings)
     first = claim(conn, clock, settings, wid)
-    store.heartbeat_job(
-        conn,
-        now=clock(),
-        settings=settings,
-        job_id=first.job.id,
-        worker_id=wid,
-        token=first.lease.token,
-        progress=Progress(percent=50),
-    )
+    assert send_steps(conn, clock, settings, first, step("a"))
     release(conn, clock, settings, first)
     second = claim(conn, clock, settings, wid)
     assert second.job.progress is None

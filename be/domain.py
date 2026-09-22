@@ -85,14 +85,29 @@ class CallbackMethod(BaseModel):
 ReportMethod = CallbackMethod
 
 
-class Progress(BaseModel):
-    """Latest progress a worker sent on a job heartbeat. Every field is optional.
+MAX_PROGRESS_STEPS = 100
+
+
+class StepStatus(StrEnum):
+    """Status of one progress step, as the worker reports it."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class ProgressStep(BaseModel):
+    """Latest state of one step a worker reported on a job heartbeat.
 
     `total` needs `current`. `percent` may come with or without `current`/`total`.
     """
 
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
+    id: str = Field(min_length=1, max_length=32)
+    status: StepStatus
     current: int | None = Field(default=None, ge=0)
     total: int | None = Field(default=None, ge=1)
     percent: float | None = Field(default=None, ge=0, le=100)
@@ -102,9 +117,6 @@ class Progress(BaseModel):
     def _check(self) -> Self:
         if self.total is not None and self.current is None:
             msg = "total requires current"
-            raise ValueError(msg)
-        if self.current is None and self.percent is None and self.message is None:
-            msg = "progress is empty"
             raise ValueError(msg)
         return self
 
@@ -167,7 +179,7 @@ class Job:
     started_at: EpochMs | None
     finished_at: EpochMs | None
     report: Report | None
-    progress: Progress | None
+    progress: list[ProgressStep] | None
 
 
 @dataclass(frozen=True, slots=True)

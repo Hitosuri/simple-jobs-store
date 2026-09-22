@@ -168,48 +168,83 @@ def send_progress(client: TestClient, claimed: Any, progress: Any) -> Any:
     return client.get(f"/api/jobs/{job_id}").json()["data"]["job"]["progress"]
 
 
-def full(**fields: Any) -> dict[str, Any]:
-    return {"current": None, "total": None, "percent": None, "message": None, **fields}
+def sent_step(**fields: Any) -> dict[str, Any]:
+    return {"id": "a", "status": "running", **fields}
+
+
+def shown_step(**fields: Any) -> dict[str, Any]:
+    return {
+        "id": "a",
+        "status": "running",
+        "current": None,
+        "total": None,
+        "percent": None,
+        "message": None,
+        **fields,
+    }
 
 
 @pytest.mark.parametrize(
     ("sent", "shown"),
     [
-        ({"current": 40, "total": 100}, full(current=40, total=100, percent=40.0)),
-        ({"current": 1234}, full(current=1234)),
-        ({"percent": 37.5}, full(percent=37.5)),
-        ({"message": "resizing"}, full(message="resizing")),
+        (sent_step(), shown_step()),
+        (sent_step(current=40, total=100), shown_step(current=40, total=100, percent=40.0)),
+        (sent_step(current=1234), shown_step(current=1234)),
+        (sent_step(percent=37.5), shown_step(percent=37.5)),
+        (sent_step(message="resizing"), shown_step(message="resizing")),
         (
-            {"current": 5, "total": 10, "percent": 70, "message": "m"},
-            full(current=5, total=10, percent=70.0, message="m"),
+            sent_step(current=5, total=10, percent=70, message="m"),
+            shown_step(current=5, total=10, percent=70.0, message="m"),
         ),
-        ({"current": 150, "total": 100}, full(current=150, total=100, percent=100.0)),
+        (sent_step(current=150, total=100), shown_step(current=150, total=100, percent=100.0)),
+        (sent_step(id="x" * 32, status="skipped"), shown_step(id="x" * 32, status="skipped")),
     ],
 )
-def test_job_heartbeat_progress_is_shown_with_derived_percent(
+def test_job_heartbeat_progress_step_is_shown_with_derived_percent(
     client: TestClient, sent: Any, shown: Any
 ) -> None:
     register(client)
     create(client)
     claimed = claim(client)
     assert claimed["job"]["progress"] is None
-    assert send_progress(client, claimed, sent) == shown
+    assert send_progress(client, claimed, [sent]) == [shown]
+
+
+def test_job_heartbeat_progress_steps_keep_first_seen_order(client: TestClient) -> None:
+    register(client)
+    create(client)
+    claimed = claim(client)
+    send_progress(client, claimed, [sent_step(id="a"), sent_step(id="b", status="pending")])
+    shown = send_progress(client, claimed, [sent_step(id="c"), sent_step(id="b", status="done")])
+    assert [(s["id"], s["status"]) for s in shown] == [
+        ("a", "running"),
+        ("b", "done"),
+        ("c", "running"),
+    ]
 
 
 @pytest.mark.parametrize(
     "bad",
     [
-        {},
-        {"total": 10},
-        {"current": -1},
-        {"current": 1, "total": 0},
-        {"percent": -0.1},
-        {"percent": 100.5},
-        {"percent": float("nan")},
-        {"current": 1, "unknown": 2},
-        {"message": 5},
+        [],
+        [{}],
+        [{"id": "a"}],
+        [sent_step(status="unknown")],
+        [sent_step(id="")],
+        [sent_step(id="x" * 33)],
+        [sent_step(id=5)],
+        [sent_step(), sent_step()],
+        [sent_step(total=10)],
+        [sent_step(current=-1)],
+        [sent_step(current=1, total=0)],
+        [sent_step(percent=-0.1)],
+        [sent_step(percent=100.5)],
+        [sent_step(percent=float("nan"))],
+        [sent_step(unknown=2)],
+        [sent_step(message=5)],
+        [sent_step(id=f"s{i}") for i in range(101)],
+        sent_step(),
         "half",
-        [1, 2],
     ],
 )
 def test_job_heartbeat_with_invalid_progress_extends_lease_but_drops_progress(
@@ -218,7 +253,7 @@ def test_job_heartbeat_with_invalid_progress_extends_lease_but_drops_progress(
     register(client)
     create(client)
     claimed = claim(client)
-    kept = send_progress(client, claimed, {"current": 1})
+    kept = send_progress(client, claimed, [sent_step(current=1)])
     clock.advance(10_000)
     job_id = claimed["job"]["id"]
     # httpx refuses to encode NaN, so the body is serialized by hand.
