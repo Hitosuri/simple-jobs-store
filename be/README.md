@@ -102,7 +102,7 @@ The cleaner deletes `success` / `failed` / `cancelled` jobs whose `finishedAt` i
 | Call | Body / query | `data` |
 |---|---|---|
 | `POST /api/jobs` | `type` (non-empty), `description` (JSON), `maxAttempt?` (1..100, default 3), `maxRunMs?` (1..86 400 000, default 1 day), `priority?` (int32, default 0), `reports?` (1..10 methods, §8) | job, HTTP 201 |
-| `GET /api/jobs` | `status?`, `type?`, `limit` 1..1000 (default 100) | jobs, newest first |
+| `GET /api/jobs` | `status?`, `type?`, `page?` (≥ 1, default 1), `pageSize?` (1..1000, default 100) | page of jobs, newest first |
 | `GET /api/jobs/{id}` | - | `{job, attempts}`, attempts oldest first |
 | `POST /api/jobs/{id}/cancel` | - | job |
 | `GET /api/workers` | - | workers |
@@ -111,7 +111,9 @@ Worker calls: [`WORKER.md`](../WORKER.md) §3.
 
 Objects:
 - **worker:** `id, name, ip, concurrentLimit, connectedAt, lastSeenAt, leaseUntil, leaseMsRemaining, connected`.
-  `ip` is the request's client address. `connected` means `leaseUntil > now`.
+  `ip` is the client address of the last register or heartbeat. `connected` means `leaseUntil > now`.
+- **page** (every paginated list): `items, page, pageSize, total`. `total` counts all matches;
+  pages = `ceil(total / pageSize)`. Offset-based: rows inserted meanwhile shift later pages.
 - **attempt:** `attemptNo, workerId, outcome, error, errorDetail, startedAt, endedAt`.
 - **Never returned in reads:** the lease token.
 

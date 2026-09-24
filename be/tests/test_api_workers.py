@@ -53,6 +53,15 @@ def test_worker_heartbeat_extends_lease(client: TestClient, clock: FakeClock) ->
     }
 
 
+def test_worker_heartbeat_updates_ip(
+    client: TestClient, settings: Settings, clock: FakeClock
+) -> None:
+    client.put("/api/workers/w1", json={"name": "alpha", "concurrentLimit": 1})
+    with TestClient(create_app(settings, clock), client=("10.0.0.7", 50000)) as other:
+        assert other.post("/api/workers/w1/heartbeat").status_code == 200
+    assert client.get("/api/workers").json()["data"][0]["ip"] == "10.0.0.7"
+
+
 def test_worker_heartbeat_unknown_worker(client: TestClient) -> None:
     resp = client.post("/api/workers/ghost/heartbeat")
     assert resp.status_code == 404

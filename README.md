@@ -92,7 +92,7 @@ All routes are under `/api` and return `{"ok": true, "data": ...}` or
 | Method | Path                                | Used by  | Purpose                                                         |
 | ------ | ----------------------------------- | -------- | --------------------------------------------------------------- |
 | POST   | `/api/jobs`                         | provider | Submit `{type, description, maxAttempt?, maxRunMs?, priority?, reports?}` |
-| GET    | `/api/jobs?status=&type=&limit=`    | anyone   | List jobs, newest first                                         |
+| GET    | `/api/jobs?status=&type=&page=&pageSize=` | anyone | List jobs, newest first, paginated                          |
 | GET    | `/api/jobs/{id}`                    | anyone   | Job + attempt history                                           |
 | POST   | `/api/jobs/{id}/cancel`             | provider | Cancel a pending or running job                                 |
 | PUT    | `/api/workers/{workerId}`           | worker   | Register                                                        |

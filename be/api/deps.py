@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Query, Request
 
 from db import connect
 from domain import Clock, EpochMs, Settings
@@ -49,6 +49,28 @@ def get_conn(runtime: RuntimeDep) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+@dataclass(frozen=True, slots=True)
+class PageParams:
+    """1-based page number and page size requested by a list endpoint."""
+
+    page: int
+    page_size: int
+
+    @property
+    def offset(self) -> int:
+        """Rows to skip before this page."""
+        return (self.page - 1) * self.page_size
+
+
+def get_page_params(
+    page: Annotated[int, Query(ge=1, le=2**31 - 1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=1000)] = 100,
+) -> PageParams:
+    """Read `?page=&pageSize=` shared by every paginated list."""
+    return PageParams(page=page, page_size=page_size)
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+PageDep = Annotated[PageParams, Depends(get_page_params)]
 NowDep = Annotated[EpochMs, Depends(get_now)]
 ConnDep = Annotated[sqlite3.Connection, Depends(get_conn)]

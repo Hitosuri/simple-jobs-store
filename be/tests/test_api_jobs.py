@@ -99,10 +99,25 @@ def test_get_unknown_job(client: TestClient) -> None:
 def test_list_jobs_filters(client: TestClient) -> None:
     create(client, type="a")
     create(client, type="b")
-    assert [j["type"] for j in client.get("/api/jobs?type=a").json()["data"]] == ["a"]
-    assert client.get("/api/jobs?status=running").json()["data"] == []
-    assert len(client.get("/api/jobs").json()["data"]) == 2
-    assert client.get("/api/jobs?limit=0").status_code == 422
+    assert [j["type"] for j in client.get("/api/jobs?type=a").json()["data"]["items"]] == ["a"]
+    assert client.get("/api/jobs?status=running").json()["data"]["items"] == []
+    assert len(client.get("/api/jobs").json()["data"]["items"]) == 2
+
+
+def test_list_jobs_returns_a_page(client: TestClient) -> None:
+    ids = [create(client)["id"] for _ in range(3)]
+    data = client.get("/api/jobs?page=2&pageSize=2").json()["data"]
+    assert [j["id"] for j in data["items"]] == [ids[0]]
+    assert (data["page"], data["pageSize"], data["total"]) == (2, 2, 3)
+    default = client.get("/api/jobs").json()["data"]
+    assert (default["page"], default["pageSize"], default["total"]) == (1, 100, 3)
+
+
+@pytest.mark.parametrize("query", ["page=0", "pageSize=0", "pageSize=1001", f"page={2**31}"])
+def test_list_jobs_rejects_bad_paging(client: TestClient, query: str) -> None:
+    resp = client.get(f"/api/jobs?{query}")
+    assert resp.status_code == 422
+    assert error_code(resp) == "VALIDATION_ERROR"
 
 
 def test_claim_returns_job_and_lease(client: TestClient, settings: Settings) -> None:
@@ -335,7 +350,7 @@ def test_create_job_rejects_non_finite_float_in_description(client: TestClient) 
     )
     assert resp.status_code == 422
     assert error_code(resp) == "VALIDATION_ERROR"
-    assert client.get("/api/jobs").json()["data"] == []
+    assert client.get("/api/jobs").json()["data"]["items"] == []
 
 
 def test_finish_success_rejects_non_finite_float_in_result(client: TestClient) -> None:

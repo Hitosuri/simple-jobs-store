@@ -194,15 +194,16 @@ def register_worker(
 
 
 def heartbeat_worker(
-    conn: sqlite3.Connection, *, now: EpochMs, settings: Settings, worker_id: WorkerId
+    conn: sqlite3.Connection, *, now: EpochMs, settings: Settings, worker_id: WorkerId, ip: str
 ) -> Worker:
-    """Extend a worker's lease.
+    """Extend a worker's lease and record the address it called from.
 
     Args:
         conn: Store connection.
         now: Store clock.
         settings: Store settings.
         worker_id: Worker sending the heartbeat.
+        ip: Client address of the heartbeat request.
 
     Returns:
         The updated worker.
@@ -213,9 +214,14 @@ def heartbeat_worker(
     with transaction(conn):
         row = _one(
             conn.execute(
-                "UPDATE workers SET last_seen_at = :now, lease_until = :lease_until"
+                "UPDATE workers SET last_seen_at = :now, lease_until = :lease_until, ip = :ip"
                 " WHERE id = :id RETURNING *",
-                {"now": now, "lease_until": now + settings.worker_lease_ms, "id": worker_id},
+                {
+                    "now": now,
+                    "lease_until": now + settings.worker_lease_ms,
+                    "ip": ip,
+                    "id": worker_id,
+                },
             ),
         )
         if row is None:
@@ -296,19 +302,37 @@ def get_job(conn: sqlite3.Connection, *, job_id: JobId) -> tuple[Job, list[Attem
 
 
 def list_jobs(
-    conn: sqlite3.Connection, *, status: JobStatus | None, job_type: str | None, limit: int
-) -> list[Job]:
-    """Return jobs newest first, optionally filtered by status and type."""
+    conn: sqlite3.Connection,
+    *,
+    status: JobStatus | None,
+    job_type: str | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[Job], int]:
+    """Return one page of jobs newest first, optionally filtered by status and type.
+
+    Returns:
+        The page's jobs and the number of jobs matching the filters.
+    """
+    params = {"status": status, "type": job_type, "limit": limit, "offset": offset}
     rows = conn.execute(
         """
         SELECT * FROM jobs
         WHERE (:status IS NULL OR status = :status) AND (:type IS NULL OR type = :type)
         ORDER BY id DESC
-        LIMIT :limit
+        LIMIT :limit OFFSET :offset
         """,
-        {"status": status, "type": job_type, "limit": limit},
+        params,
     )
-    return [_to_job(r) for r in rows]
+    jobs = [_to_job(r) for r in rows]
+    total = _count(
+        conn.execute(
+            "SELECT COUNT(*) FROM jobs"
+            " WHERE (:status IS NULL OR status = :status) AND (:type IS NULL OR type = :type)",
+            params,
+        )
+    )
+    return jobs, total
 
 
 _CLAIM_SQL = """

@@ -15,6 +15,10 @@ router = APIRouter(prefix="/workers", tags=["workers"])
 WorkerIdPath = Annotated[str, Path(min_length=1)]
 
 
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 @router.put("/{worker_id}")
 def register_worker(
     worker_id: WorkerIdPath,
@@ -31,7 +35,7 @@ def register_worker(
         settings=settings,
         worker_id=WorkerId(worker_id),
         name=body.name,
-        ip=request.client.host if request.client else "unknown",
+        ip=_client_ip(request),
         concurrent_limit=body.concurrent_limit,
     )
     return ApiOk[WorkerOut](data=WorkerOut.build(worker, now))
@@ -39,10 +43,12 @@ def register_worker(
 
 @router.post("/{worker_id}/heartbeat")
 def heartbeat_worker(
-    worker_id: WorkerIdPath, conn: ConnDep, now: NowDep, settings: SettingsDep
+    worker_id: WorkerIdPath, request: Request, conn: ConnDep, now: NowDep, settings: SettingsDep
 ) -> ApiOk[WorkerLeaseOut]:
-    """Extend the worker's lease. Carries no job information."""
-    worker = store.heartbeat_worker(conn, now=now, settings=settings, worker_id=WorkerId(worker_id))
+    """Extend the worker's lease and refresh its ip. Carries no job information."""
+    worker = store.heartbeat_worker(
+        conn, now=now, settings=settings, worker_id=WorkerId(worker_id), ip=_client_ip(request)
+    )
     return ApiOk[WorkerLeaseOut](data=WorkerLeaseOut.build(worker, now))
 
 

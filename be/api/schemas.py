@@ -2,7 +2,7 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal, Self
+from typing import Annotated, Generic, Literal, Self, TypeVar
 
 from fastapi import Body
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
@@ -29,6 +29,8 @@ from domain import (
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 _STEPS: TypeAdapter[list[ProgressStep]] = TypeAdapter(
     Annotated[list[ProgressStep], Field(min_length=1, max_length=MAX_PROGRESS_STEPS)]
 )
@@ -50,6 +52,15 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel, validate_by_name=True, validate_by_alias=True
     )
+
+
+class Page(CamelModel, Generic[T]):
+    """One page of a list endpoint; `total` counts every item matching the filters."""
+
+    items: list[T]
+    page: int
+    page_size: int
+    total: int
 
 
 class WorkerRegisterBody(CamelModel):

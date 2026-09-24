@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Path, Query, status
 
 import store
-from api.deps import ConnDep, NowDep, SettingsDep
+from api.deps import ConnDep, NowDep, PageDep, SettingsDep
 from api.envelope import ApiOk
 from api.schemas import (
     ClaimBody,
@@ -19,6 +19,7 @@ from api.schemas import (
     JobLeaseOut,
     JobOut,
     LeaseBody,
+    Page,
 )
 from domain import FailureReport, JobId, JobStatus, SuccessReport
 
@@ -51,13 +52,26 @@ def create_job(
 @router.get("")
 def list_jobs(
     conn: ConnDep,
+    paging: PageDep,
     job_status: Annotated[JobStatus | None, Query(alias="status")] = None,
     job_type: Annotated[str | None, Query(alias="type")] = None,
-    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
-) -> ApiOk[list[JobOut]]:
-    """List jobs newest first."""
-    jobs = store.list_jobs(conn, status=job_status, job_type=job_type, limit=limit)
-    return ApiOk[list[JobOut]](data=[JobOut.build(j) for j in jobs])
+) -> ApiOk[Page[JobOut]]:
+    """List one page of jobs, newest first."""
+    jobs, total = store.list_jobs(
+        conn,
+        status=job_status,
+        job_type=job_type,
+        limit=paging.page_size,
+        offset=paging.offset,
+    )
+    return ApiOk[Page[JobOut]](
+        data=Page[JobOut](
+            items=[JobOut.build(j) for j in jobs],
+            page=paging.page,
+            page_size=paging.page_size,
+            total=total,
+        )
+    )
 
 
 @router.post("/claim")

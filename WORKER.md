@@ -83,7 +83,7 @@ Branch on `ok` and `error.code`, not on HTTP status or `message`.
 | Call | Body | `data` |
 |---|---|---|
 | `PUT /workers/{workerId}` | `name` (non-empty), `concurrentLimit` (≥ 1) | worker |
-| `POST /workers/{workerId}/heartbeat` | - | `leaseUntil, leaseMsRemaining` |
+| `POST /workers/{workerId}/heartbeat` | - | `leaseUntil, leaseMsRemaining`; the store refreshes `ip` from the request |
 | `POST /jobs/claim` | `workerId, type` | claim, or `null` if nothing to do |
 | `POST /jobs/{jobId}/heartbeat` | `workerId, leaseToken, progress?` | `leaseUntil, leaseMsRemaining, deadlineAt, progressAccepted` |
 | `POST /jobs/{jobId}/finish` | `status: "success", workerId, leaseToken, result?` (default `null`) | job |

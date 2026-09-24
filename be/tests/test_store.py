@@ -121,17 +121,22 @@ def test_heartbeat_extends_worker_lease(
     add_worker(conn, clock, settings)
     connected_at = clock.now
     clock.advance(10_000)
-    worker = store.heartbeat_worker(conn, now=clock(), settings=settings, worker_id=WorkerId("w1"))
+    worker = store.heartbeat_worker(
+        conn, now=clock(), settings=settings, worker_id=WorkerId("w1"), ip="10.0.0.9"
+    )
     assert worker.last_seen_at == clock.now
     assert worker.lease_until == clock.now + settings.worker_lease_ms
     assert worker.connected_at == connected_at
+    assert worker.ip == "10.0.0.9"
 
 
 def test_heartbeat_unknown_worker_raises(
     conn: sqlite3.Connection, clock: FakeClock, settings: Settings
 ) -> None:
     with pytest.raises(WorkerNotFoundError):
-        store.heartbeat_worker(conn, now=clock(), settings=settings, worker_id=WorkerId("nope"))
+        store.heartbeat_worker(
+            conn, now=clock(), settings=settings, worker_id=WorkerId("nope"), ip="10.0.0.9"
+        )
 
 
 def test_create_job_applies_defaults(
@@ -183,17 +188,26 @@ def test_list_jobs_filters_and_orders_newest_first(
     first = add_job(conn, clock, settings, job_type="a")
     second = add_job(conn, clock, settings, job_type="b")
     third = add_job(conn, clock, settings, job_type="a")
-    assert [j.id for j in store.list_jobs(conn, status=None, job_type=None, limit=10)] == [
-        third.id,
-        second.id,
-        first.id,
-    ]
-    assert [j.id for j in store.list_jobs(conn, status=None, job_type="a", limit=10)] == [
-        third.id,
-        first.id,
-    ]
-    assert len(store.list_jobs(conn, status=None, job_type=None, limit=1)) == 1
-    assert store.list_jobs(conn, status=JobStatus.RUNNING, job_type=None, limit=10) == []
+    jobs, total = store.list_jobs(conn, status=None, job_type=None, limit=10, offset=0)
+    assert [j.id for j in jobs] == [third.id, second.id, first.id]
+    assert total == 3
+    jobs, total = store.list_jobs(conn, status=None, job_type="a", limit=10, offset=0)
+    assert [j.id for j in jobs] == [third.id, first.id]
+    assert total == 2
+    assert store.list_jobs(conn, status=JobStatus.RUNNING, job_type=None, limit=10, offset=0) == (
+        [],
+        0,
+    )
+
+
+def test_list_jobs_pages_with_offset_and_counts_all_matches(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    ids = [add_job(conn, clock, settings).id for _ in range(5)]
+    jobs, total = store.list_jobs(conn, status=None, job_type=None, limit=2, offset=2)
+    assert [j.id for j in jobs] == [ids[2], ids[1]]
+    assert total == 5
+    assert store.list_jobs(conn, status=None, job_type=None, limit=2, offset=10) == ([], 5)
 
 
 def claim(
