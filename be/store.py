@@ -36,10 +36,14 @@ from domain import (
     Settings,
     SuccessReport,
     Worker,
+    WorkerBusyError,
+    WorkerConnectedError,
     WorkerId,
     WorkerLeaseExpiredError,
     WorkerNotFoundError,
 )
+
+OFFLINE_HIDE_MS = 86_400_000
 
 _JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _METHODS: TypeAdapter[list[ReportMethod]] = TypeAdapter(list[ReportMethod])
@@ -248,9 +252,46 @@ def heartbeat_worker(
     return _to_worker(row)
 
 
-def list_workers(conn: sqlite3.Connection) -> list[Worker]:
-    """Return all workers ordered by id."""
-    return [_to_worker(r) for r in conn.execute("SELECT * FROM workers ORDER BY id")]
+def list_workers(conn: sqlite3.Connection, *, now: EpochMs, include_offline: bool) -> list[Worker]:
+    """Return workers ordered by id.
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        include_offline: Also return workers whose lease expired over 24 hours ago.
+
+    Returns:
+        The matching workers.
+    """
+    rows = conn.execute(
+        "SELECT * FROM workers WHERE :all OR lease_until >= :cutoff ORDER BY id",
+        {"all": include_offline, "cutoff": now - OFFLINE_HIDE_MS},
+    )
+    return [_to_worker(r) for r in rows]
+
+
+def delete_worker(conn: sqlite3.Connection, *, now: EpochMs, worker_id: WorkerId) -> None:
+    """Forget an offline worker that holds no job. Its attempt history stays.
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        worker_id: Worker to forget.
+
+    Raises:
+        WorkerNotFoundError: No such worker.
+        WorkerConnectedError: The worker's lease is still valid.
+        WorkerBusyError: A job still references the worker.
+    """
+    with transaction(conn):
+        row = _one(conn.execute("SELECT lease_until FROM workers WHERE id = ?", (worker_id,)))
+        if row is None:
+            raise WorkerNotFoundError
+        if row["lease_until"] > now:
+            raise WorkerConnectedError
+        if conn.execute("SELECT 1 FROM jobs WHERE worker_id = ?", (worker_id,)).fetchone():
+            raise WorkerBusyError
+        conn.execute("DELETE FROM workers WHERE id = ?", (worker_id,))
 
 
 def create_job(

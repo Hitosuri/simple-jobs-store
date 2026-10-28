@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, Path, Query, Request
 
 import store
 from api.deps import ConnDep, NowDep, SettingsDep
@@ -53,6 +53,19 @@ def heartbeat_worker(
 
 
 @router.get("")
-def list_workers(conn: ConnDep, now: NowDep) -> ApiOk[list[WorkerOut]]:
-    """List all workers with their connection state."""
-    return ApiOk[list[WorkerOut]](data=[WorkerOut.build(w, now) for w in store.list_workers(conn)])
+def list_workers(
+    conn: ConnDep,
+    now: NowDep,
+    *,
+    include_offline: Annotated[bool, Query(alias="includeOffline")] = False,
+) -> ApiOk[list[WorkerOut]]:
+    """List workers with their connection state; hides those offline over 24 hours by default."""
+    workers = store.list_workers(conn, now=now, include_offline=include_offline)
+    return ApiOk[list[WorkerOut]](data=[WorkerOut.build(w, now) for w in workers])
+
+
+@router.delete("/{worker_id}")
+def delete_worker(worker_id: WorkerIdPath, conn: ConnDep, now: NowDep) -> ApiOk[None]:
+    """Forget an offline worker that holds no job."""
+    store.delete_worker(conn, now=now, worker_id=WorkerId(worker_id))
+    return ApiOk[None](data=None)

@@ -69,6 +69,8 @@ class ErrorCode(StrEnum):
     JOB_NOT_RETRYABLE = "JOB_NOT_RETRYABLE"
     JOB_NOT_PENDING = "JOB_NOT_PENDING"
     JOB_NOT_FINISHED = "JOB_NOT_FINISHED"
+    WORKER_CONNECTED = "WORKER_CONNECTED"
+    WORKER_BUSY = "WORKER_BUSY"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -322,6 +324,20 @@ class JobNotFinishedError(StoreError):
 
     code = ErrorCode.JOB_NOT_FINISHED
     message = "job is not finished"
+
+
+class WorkerConnectedError(StoreError):
+    """Only offline workers can be forgotten."""
+
+    code = ErrorCode.WORKER_CONNECTED
+    message = "worker is still connected"
+
+
+class WorkerBusyError(StoreError):
+    """A worker that still holds a job cannot be forgotten."""
+
+    code = ErrorCode.WORKER_BUSY
+    message = "worker still has a job"
 
 
 @dataclass(frozen=True, slots=True)

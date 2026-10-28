@@ -88,6 +88,51 @@ def test_list_workers_reports_connection(
     ]
 
 
+def test_list_workers_hides_long_offline_unless_asked(client: TestClient, clock: FakeClock) -> None:
+    client.put("/api/workers/old", json={"name": "a", "concurrentLimit": 1})
+    clock.advance(25 * 3_600_000)
+    client.put("/api/workers/new", json={"name": "b", "concurrentLimit": 1})
+    shown = client.get("/api/workers").json()["data"]
+    assert [w["id"] for w in shown] == ["new"]
+    everyone = client.get("/api/workers?includeOffline=true").json()["data"]
+    assert [w["id"] for w in everyone] == ["new", "old"]
+
+
+def test_list_workers_shows_offline_for_under_a_day(client: TestClient, clock: FakeClock) -> None:
+    client.put("/api/workers/w1", json={"name": "a", "concurrentLimit": 1})
+    clock.advance(3_600_000 + 30_000)
+    assert [w["id"] for w in client.get("/api/workers").json()["data"]] == ["w1"]
+
+
+def test_delete_connected_worker_is_rejected(client: TestClient) -> None:
+    client.put("/api/workers/w1", json={"name": "a", "concurrentLimit": 1})
+    resp = client.delete("/api/workers/w1")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "WORKER_CONNECTED"
+
+
+def test_delete_offline_worker_with_running_job_is_rejected(
+    client: TestClient, clock: FakeClock, settings: Settings
+) -> None:
+    client.put("/api/workers/w1", json={"name": "a", "concurrentLimit": 1})
+    client.post("/api/jobs", json={"type": "t", "description": {}, "maxRunMs": 3_600_000})
+    client.post("/api/jobs/claim", json={"workerId": "w1", "type": "t"})
+    clock.advance(settings.worker_lease_ms + 1)
+    resp = client.delete("/api/workers/w1")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "WORKER_BUSY"
+
+
+def test_delete_offline_idle_worker_and_unknown(
+    client: TestClient, clock: FakeClock, settings: Settings
+) -> None:
+    client.put("/api/workers/w1", json={"name": "a", "concurrentLimit": 1})
+    clock.advance(settings.worker_lease_ms + 1)
+    assert client.delete("/api/workers/w1").json() == {"ok": True, "data": None}
+    assert client.get("/api/workers?includeOffline=true").json()["data"] == []
+    assert client.delete("/api/workers/w1").status_code == 404
+
+
 def test_unknown_route_uses_envelope(client: TestClient) -> None:
     resp = client.get("/api/nope")
     assert resp.status_code == 404

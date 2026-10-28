@@ -34,6 +34,8 @@ from domain import (
     Settings,
     StepStatus,
     SuccessReport,
+    WorkerBusyError,
+    WorkerConnectedError,
     WorkerId,
     WorkerLeaseExpiredError,
     WorkerNotFoundError,
@@ -116,7 +118,64 @@ def test_register_existing_worker_updates_info(
     )
     assert (worker.name, worker.ip, worker.concurrent_limit) == ("renamed", "10.0.0.2", 8)
     assert worker.connected_at == clock.now
-    assert len(store.list_workers(conn)) == 1
+    assert len(store.list_workers(conn, now=clock(), include_offline=False)) == 1
+
+
+def test_list_workers_hides_those_offline_over_a_day(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    add_worker(conn, clock, settings, "old")
+    clock.advance(25 * 3_600_000)
+    add_worker(conn, clock, settings, "new")
+    visible = store.list_workers(conn, now=clock(), include_offline=False)
+    everyone = store.list_workers(conn, now=clock(), include_offline=True)
+    assert [w.id for w in visible] == ["new"]
+    assert [w.id for w in everyone] == ["new", "old"]
+
+
+def test_delete_worker_unknown_raises(conn: sqlite3.Connection, clock: FakeClock) -> None:
+    with pytest.raises(WorkerNotFoundError):
+        store.delete_worker(conn, now=clock(), worker_id=WorkerId("nope"))
+
+
+def test_delete_worker_connected_raises(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    with pytest.raises(WorkerConnectedError):
+        store.delete_worker(conn, now=clock(), worker_id=wid)
+
+
+def test_delete_worker_busy_raises(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_run_ms=10 * settings.worker_lease_ms)
+    claim(conn, clock, settings, wid)
+    clock.advance(settings.worker_lease_ms + 1)
+    with pytest.raises(WorkerBusyError):
+        store.delete_worker(conn, now=clock(), worker_id=wid)
+
+
+def test_delete_offline_idle_worker_keeps_attempt_history(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings)
+    claimed = claim(conn, clock, settings, wid)
+    store.release_job(
+        conn,
+        now=clock(),
+        settings=settings,
+        job_id=claimed.job.id,
+        worker_id=wid,
+        token=claimed.lease.token,
+    )
+    clock.advance(settings.worker_lease_ms + 1)
+    store.delete_worker(conn, now=clock(), worker_id=wid)
+    assert store.list_workers(conn, now=clock(), include_offline=True) == []
+    count = conn.execute("SELECT COUNT(*) FROM job_attempts WHERE worker_id = 'w1'").fetchone()[0]
+    assert count == 1
 
 
 def test_heartbeat_extends_worker_lease(
