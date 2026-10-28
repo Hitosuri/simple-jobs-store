@@ -14,7 +14,7 @@ from typing_extensions import override
 
 import reports
 import store
-from api import jobs, workers
+from api import insights, jobs, workers
 from api.deps import Runtime
 from api.envelope import install_error_handlers
 from api.schemas import ReportBody
@@ -112,4 +112,5 @@ def create_app(settings: Settings, clock: Clock) -> FastAPI:
     install_error_handlers(app)
     app.include_router(workers.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
+    app.include_router(insights.router, prefix="/api")
     return app

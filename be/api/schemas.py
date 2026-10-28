@@ -35,6 +35,7 @@ from domain import (
     Worker,
     WorkerId,
 )
+from stats import AttemptRow, Overview, RunningJob
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +391,147 @@ class AttemptOut(CamelModel):
             error_detail=attempt.error_detail,
             started_at=_dt(attempt.started_at),
             ended_at=_opt_dt(attempt.ended_at),
+        )
+
+
+class AttemptWindowOut(CamelModel):
+    """One attempt of the swimlane window, with its job."""
+
+    job_id: JobId
+    job_type: str
+    attempt_no: int
+    worker_id: WorkerId
+    outcome: AttemptOutcome | None
+    started_at: datetime
+    ended_at: datetime | None
+
+    @classmethod
+    def build(cls, row: AttemptRow) -> Self:
+        """Convert an attempt row."""
+        return cls(
+            job_id=row.job_id,
+            job_type=row.job_type,
+            attempt_no=row.attempt_no,
+            worker_id=row.worker_id,
+            outcome=row.outcome,
+            started_at=_dt(row.started_at),
+            ended_at=_opt_dt(row.ended_at),
+        )
+
+
+class RunningJobOut(CamelModel):
+    """A job a worker is running now."""
+
+    id: JobId
+    type: str
+    started_at: datetime
+    lease_until: datetime
+    progress_percent: float | None
+
+    @classmethod
+    def build(cls, job: RunningJob) -> Self:
+        """Convert a running job."""
+        return cls(
+            id=job.id,
+            type=job.type,
+            started_at=_dt(job.started_at),
+            lease_until=_dt(job.lease_until),
+            progress_percent=job.progress_percent,
+        )
+
+
+class WorkerLoadOut(CamelModel):
+    """A worker and the jobs it is running."""
+
+    worker: WorkerOut
+    running: list[RunningJobOut]
+
+
+class TypeQueueOut(CamelModel):
+    """Pending jobs of one type."""
+
+    type: str
+    pending: int
+    oldest_available_at: datetime
+
+
+class FinishedOut(CamelModel):
+    """Jobs finished in a period, by outcome."""
+
+    success: int
+    failed: int
+
+
+class BucketOut(CamelModel):
+    """Jobs finished in the 30 minutes starting at `start`."""
+
+    start: datetime
+    success: int
+    failed: int
+
+
+class AlertOut(CamelModel):
+    """A recent worker loss or expired attempt."""
+
+    kind: Literal["worker_lost", "attempt_expired"]
+    worker_id: WorkerId
+    job_id: JobId | None
+    at: datetime
+
+
+class OverviewOut(CamelModel):
+    """`GET /api/overview` response."""
+
+    counts: JobCountsOut
+    workers: list[WorkerLoadOut]
+    pending_by_type: list[TypeQueueOut]
+    finished_24h: FinishedOut
+    finished_prev_24h: FinishedOut
+    throughput: list[BucketOut]
+    alerts: list[AlertOut]
+    run_p95_by_type: dict[str, int]
+
+    @classmethod
+    def build(cls, overview: Overview, now: EpochMs) -> Self:
+        """Convert an overview, computing worker lease fields against `now`."""
+        counts = overview.counts
+        return cls(
+            counts=JobCountsOut(
+                pending=counts[JobStatus.PENDING],
+                running=counts[JobStatus.RUNNING],
+                success=counts[JobStatus.SUCCESS],
+                failed=counts[JobStatus.FAILED],
+                cancelled=counts[JobStatus.CANCELLED],
+            ),
+            workers=[
+                WorkerLoadOut(
+                    worker=WorkerOut.build(load.worker, now),
+                    running=[RunningJobOut.build(job) for job in load.running],
+                )
+                for load in overview.workers
+            ],
+            pending_by_type=[
+                TypeQueueOut(
+                    type=q.type, pending=q.pending, oldest_available_at=_dt(q.oldest_available_at)
+                )
+                for q in overview.pending_by_type
+            ],
+            finished_24h=FinishedOut(
+                success=overview.finished_24h.success, failed=overview.finished_24h.failed
+            ),
+            finished_prev_24h=FinishedOut(
+                success=overview.finished_prev_24h.success,
+                failed=overview.finished_prev_24h.failed,
+            ),
+            throughput=[
+                BucketOut(start=_dt(b.start), success=b.success, failed=b.failed)
+                for b in overview.throughput
+            ],
+            alerts=[
+                AlertOut(kind=a.kind, worker_id=a.worker_id, job_id=a.job_id, at=_dt(a.at))
+                for a in overview.alerts
+            ],
+            run_p95_by_type=overview.run_p95_by_type,
         )
 
 
