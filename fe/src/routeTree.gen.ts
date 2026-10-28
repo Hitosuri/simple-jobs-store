@@ -10,33 +10,100 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as JobsRouteImport } from './routes/jobs'
+import { Route as MachinesRouteImport } from './routes/machines'
+import { Route as StatsRouteImport } from './routes/stats'
+import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
+import { Route as MachinesWorkerIdRouteImport } from './routes/machines.$workerId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JobsRoute = JobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MachinesRoute = MachinesRouteImport.update({
+  id: '/machines',
+  path: '/machines',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatsRoute = StatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JobsJobIdRoute = JobsJobIdRouteImport.update({
+  id: '/$jobId',
+  path: '/$jobId',
+  getParentRoute: () => JobsRoute,
+} as any)
+const MachinesWorkerIdRoute = MachinesWorkerIdRouteImport.update({
+  id: '/$workerId',
+  path: '/$workerId',
+  getParentRoute: () => MachinesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/jobs': typeof JobsRouteWithChildren
+  '/machines': typeof MachinesRouteWithChildren
+  '/stats': typeof StatsRoute
+  '/jobs/$jobId': typeof JobsJobIdRoute
+  '/machines/$workerId': typeof MachinesWorkerIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/jobs': typeof JobsRouteWithChildren
+  '/machines': typeof MachinesRouteWithChildren
+  '/stats': typeof StatsRoute
+  '/jobs/$jobId': typeof JobsJobIdRoute
+  '/machines/$workerId': typeof MachinesWorkerIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/jobs': typeof JobsRouteWithChildren
+  '/machines': typeof MachinesRouteWithChildren
+  '/stats': typeof StatsRoute
+  '/jobs/$jobId': typeof JobsJobIdRoute
+  '/machines/$workerId': typeof MachinesWorkerIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/jobs'
+    | '/machines'
+    | '/stats'
+    | '/jobs/$jobId'
+    | '/machines/$workerId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/jobs'
+    | '/machines'
+    | '/stats'
+    | '/jobs/$jobId'
+    | '/machines/$workerId'
+  id:
+    | '__root__'
+    | '/'
+    | '/jobs'
+    | '/machines'
+    | '/stats'
+    | '/jobs/$jobId'
+    | '/machines/$workerId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  JobsRoute: typeof JobsRouteWithChildren
+  MachinesRoute: typeof MachinesRouteWithChildren
+  StatsRoute: typeof StatsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +115,71 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/jobs': {
+      id: '/jobs'
+      path: '/jobs'
+      fullPath: '/jobs'
+      preLoaderRoute: typeof JobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/machines': {
+      id: '/machines'
+      path: '/machines'
+      fullPath: '/machines'
+      preLoaderRoute: typeof MachinesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stats': {
+      id: '/stats'
+      path: '/stats'
+      fullPath: '/stats'
+      preLoaderRoute: typeof StatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jobs/$jobId': {
+      id: '/jobs/$jobId'
+      path: '/$jobId'
+      fullPath: '/jobs/$jobId'
+      preLoaderRoute: typeof JobsJobIdRouteImport
+      parentRoute: typeof JobsRoute
+    }
+    '/machines/$workerId': {
+      id: '/machines/$workerId'
+      path: '/$workerId'
+      fullPath: '/machines/$workerId'
+      preLoaderRoute: typeof MachinesWorkerIdRouteImport
+      parentRoute: typeof MachinesRoute
+    }
   }
 }
 
+interface JobsRouteChildren {
+  JobsJobIdRoute: typeof JobsJobIdRoute
+}
+
+const JobsRouteChildren: JobsRouteChildren = {
+  JobsJobIdRoute: JobsJobIdRoute,
+}
+
+const JobsRouteWithChildren = JobsRoute._addFileChildren(JobsRouteChildren)
+
+interface MachinesRouteChildren {
+  MachinesWorkerIdRoute: typeof MachinesWorkerIdRoute
+}
+
+const MachinesRouteChildren: MachinesRouteChildren = {
+  MachinesWorkerIdRoute: MachinesWorkerIdRoute,
+}
+
+const MachinesRouteWithChildren = MachinesRoute._addFileChildren(
+  MachinesRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  JobsRoute: JobsRouteWithChildren,
+  MachinesRoute: MachinesRouteWithChildren,
+  StatsRoute: StatsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

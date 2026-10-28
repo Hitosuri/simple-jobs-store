@@ -1,3 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { PageHeader } from '@/components/page-header';
 
-export const Route = createFileRoute('/')({ component: () => <h1>Overview</h1> });
+export const Route = createFileRoute('/')({ component: () => <PageHeader title="Overview" /> });
