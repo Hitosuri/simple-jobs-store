@@ -97,7 +97,7 @@ All routes are under `/api` and return `{"ok": true, "data": ...}` or
 | POST   | `/api/jobs/{id}/cancel`             | provider | Cancel a pending or running job                                 |
 | PUT    | `/api/workers/{workerId}`           | worker   | Register                                                        |
 | POST   | `/api/workers/{workerId}/heartbeat` | worker   | Keep worker alive                                               |
-| GET    | `/api/workers`                      | anyone   | List workers                                                    |
+| GET    | `/api/workers`                      | anyone   | List workers (hides those offline over 24 h; `includeOffline=true` shows all) |
 | POST   | `/api/jobs/claim`                   | worker   | Claim next job of a type                                        |
 | POST   | `/api/jobs/{id}/heartbeat`          | worker   | Extend job lease, optionally report progress                    |
 | POST   | `/api/jobs/{id}/finish`             | worker   | Report success or failure                                       |

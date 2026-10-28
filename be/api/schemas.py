@@ -52,6 +52,12 @@ def _dt(ms: int) -> datetime:
     return _EPOCH + timedelta(milliseconds=ms)
 
 
+def epoch_ms(moment: datetime) -> EpochMs:
+    """Convert a datetime to epoch milliseconds; naive values are taken as UTC."""
+    aware = moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+    return EpochMs((aware - _EPOCH) // timedelta(milliseconds=1))
+
+
 def _remaining(until: int, now: int) -> int:
     return max(until - now, 0)
 
@@ -290,7 +296,7 @@ class JobOut(CamelModel):
     progress: list[ProgressStepOut] | None
     requeued_at: datetime | None
     attempts_used: int
-    last_worker_id: str | None
+    last_worker_id: WorkerId | None
 
     @classmethod
     def build(cls, job: Job) -> Self:

@@ -401,7 +401,7 @@ _ORDER_BY = {
     JobSort.NEWEST: "id DESC",
     JobSort.OLDEST: "id ASC",
     JobSort.PRIORITY: "priority DESC, id DESC",
-    JobSort.RUNNING_LONGEST: "started_at IS NULL, started_at ASC, id DESC",
+    JobSort.RUNNING_LONGEST: "status = 'running' DESC, started_at IS NULL, started_at ASC, id DESC",
 }
 
 
@@ -656,7 +656,10 @@ def _reclaim_lease(
             (job.id, job.attempt),
         ),
     )
-    if row is None:
+    if (
+        row is None
+        or _one(conn.execute("SELECT 1 FROM workers WHERE id = ?", (worker_id,))) is None
+    ):
         return None
     newest = _to_attempt(row)
     if (

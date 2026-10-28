@@ -240,7 +240,8 @@ def _finished(conn: sqlite3.Connection, start: int, end: int) -> FinishedCounts:
     row = conn.execute(
         "SELECT COALESCE(SUM(status = 'success'), 0) AS ok,"
         " COALESCE(SUM(status = 'failed'), 0) AS bad FROM jobs"
-        " WHERE finished_at >= ? AND finished_at < ?",
+        " WHERE status IN ('success', 'failed', 'cancelled')"
+        " AND finished_at >= ? AND finished_at < ?",
         (start, end),
     ).fetchone()
     return FinishedCounts(success=row["ok"], failed=row["bad"])
@@ -253,7 +254,8 @@ def _throughput(conn: sqlite3.Connection, now: EpochMs) -> list[Bucket]:
         "SELECT (finished_at - :first) / :size AS slot,"
         " COALESCE(SUM(status = 'success'), 0) AS ok,"
         " COALESCE(SUM(status = 'failed'), 0) AS bad FROM jobs"
-        " WHERE finished_at >= :first AND finished_at < :end GROUP BY slot",
+        " WHERE status IN ('success', 'failed', 'cancelled')"
+        " AND finished_at >= :first AND finished_at < :end GROUP BY slot",
         {"first": first, "end": end, "size": BUCKET_MS},
     )
     counts = {r["slot"]: (r["ok"], r["bad"]) for r in rows}
@@ -351,7 +353,8 @@ def overview(conn: sqlite3.Connection, *, now: EpochMs) -> Overview:
 def _finished_by_type(conn: sqlite3.Connection, start: int, end: int) -> dict[str, dict[str, int]]:
     rows = conn.execute(
         "SELECT type, status, COUNT(*) AS n FROM jobs"
-        " WHERE finished_at >= ? AND finished_at < ? GROUP BY type, status",
+        " WHERE status IN ('success', 'failed', 'cancelled')"
+        " AND finished_at >= ? AND finished_at < ? GROUP BY type, status",
         (start, end),
     )
     counts: dict[str, dict[str, int]] = {}
@@ -384,12 +387,12 @@ def _utilisation(
     if capacity == 0:
         return None
     end = min(end, now)
-    attempts = attempts_between(conn, start=EpochMs(start), end=EpochMs(end), worker_id=None)
-    busy = sum(
-        min(now if a.ended_at is None else a.ended_at, end) - max(a.started_at, start)
-        for a in attempts
-    )
-    return busy / (capacity * (end - start))
+    row = conn.execute(
+        "SELECT COALESCE(SUM(MIN(COALESCE(ended_at, :now), :end) - MAX(started_at, :start)), 0)"
+        " FROM job_attempts WHERE started_at < :end AND (ended_at IS NULL OR ended_at > :start)",
+        {"now": now, "start": start, "end": end},
+    ).fetchone()
+    return min(1.0, int(row[0]) / (capacity * (end - start)))
 
 
 def _kpis(conn: sqlite3.Connection, now: int, start: int, end: int, capacity: int) -> KpiValues:
@@ -411,7 +414,8 @@ def _stats_buckets(conn: sqlite3.Connection, now: int, window: int, size: int) -
     first = now // size * size - (count - 1) * size
     rows = conn.execute(
         "SELECT (finished_at - :first) / :size AS slot, status, COUNT(*) AS n FROM jobs"
-        " WHERE finished_at >= :first AND finished_at < :end GROUP BY slot, status",
+        " WHERE status IN ('success', 'failed', 'cancelled')"
+        " AND finished_at >= :first AND finished_at < :end GROUP BY slot, status",
         {"first": first, "end": first + count * size, "size": size},
     )
     cells = {(r["slot"], r["status"]): r["n"] for r in rows}
@@ -486,7 +490,9 @@ def stats_for_range(conn: sqlite3.Connection, *, now: EpochMs, range_: StatsRang
     window, size = _RANGE_MS[range_]
     start, end = now - window, now + 1
     capacity = sum(
-        w.concurrent_limit for w in store.list_workers(conn, now=now, include_offline=False)
+        w.concurrent_limit
+        for w in store.list_workers(conn, now=now, include_offline=False)
+        if w.lease_until > now
     )
     previous = _kpis(conn, now, start - window, start, capacity) if range_ != "7d" else None
     return Stats(

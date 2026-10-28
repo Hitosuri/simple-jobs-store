@@ -1,7 +1,7 @@
 """Job routes."""
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Path, Query, status
@@ -26,9 +26,9 @@ from api.schemas import (
     JobPatchBody,
     LeaseBody,
     Page,
+    epoch_ms,
 )
 from domain import (
-    EpochMs,
     FailureReport,
     JobId,
     JobQuery,
@@ -65,13 +65,6 @@ def create_job(
     return ApiOk[JobOut](data=JobOut.build(job))
 
 
-def _epoch_ms(moment: datetime | None) -> EpochMs | None:
-    if moment is None:
-        return None
-    aware = moment if moment.tzinfo else moment.replace(tzinfo=UTC)
-    return EpochMs((aware - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(milliseconds=1))
-
-
 def get_job_query(
     statuses: Annotated[list[JobStatus] | None, Query(alias="status")] = None,
     job_types: Annotated[list[str] | None, Query(alias="type")] = None,
@@ -87,8 +80,8 @@ def get_job_query(
         job_types=tuple(job_types or ()),
         worker_id=None if worker is None else WorkerId(worker),
         q=q,
-        created_from=_epoch_ms(created_from),
-        created_to=_epoch_ms(created_to),
+        created_from=None if created_from is None else epoch_ms(created_from),
+        created_to=None if created_to is None else epoch_ms(created_to),
         sort=sort,
     )
 

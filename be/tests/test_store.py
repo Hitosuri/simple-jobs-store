@@ -22,6 +22,7 @@ from domain import (
     JobNotPendingError,
     JobNotRetryableError,
     JobQuery,
+    JobSort,
     JobStatus,
     Lease,
     LeaseRejectedError,
@@ -1356,3 +1357,65 @@ def test_delete_rejects_unfinished_job(
 def test_delete_unknown_job_raises(conn: sqlite3.Connection) -> None:
     with pytest.raises(JobNotFoundError):
         store.delete_job(conn, job_id=JobId(999))
+
+
+def _forgotten_worker_with_reclaimable_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> tuple[WorkerId, Job, LeaseToken]:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=3, max_run_ms=10 * settings.worker_lease_ms)
+    claimed = claim(conn, clock, settings, wid)
+    clock.advance(settings.worker_lease_ms + 1)
+    run_cleanup(conn, clock, settings)
+    store.delete_worker(conn, now=clock(), worker_id=wid)
+    return wid, claimed.job, claimed.lease.token
+
+
+def test_forgotten_worker_cannot_reclaim_by_heartbeat(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid, job, token = _forgotten_worker_with_reclaimable_job(conn, clock, settings)
+    with pytest.raises(LeaseRejectedError):
+        store.heartbeat_job(
+            conn, now=clock(), settings=settings, job_id=job.id, worker_id=wid, token=token
+        )
+
+
+def test_forgotten_worker_cannot_reclaim_by_finish(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid, job, token = _forgotten_worker_with_reclaimable_job(conn, clock, settings)
+    with pytest.raises(LeaseRejectedError):
+        store.finish_job(
+            conn,
+            now=clock(),
+            settings=settings,
+            job_id=job.id,
+            worker_id=wid,
+            token=token,
+            report=SuccessReport(result=None),
+        )
+
+
+def test_running_longest_puts_running_before_requeued_with_old_start(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    w1 = add_worker(conn, clock, settings, "w1")
+    w2 = add_worker(conn, clock, settings, "w2")
+    old = add_job(conn, clock, settings, job_type="a")
+    first = claim(conn, clock, settings, w1, "a")
+    store.release_job(
+        conn,
+        now=clock(),
+        settings=settings,
+        job_id=old.id,
+        worker_id=w1,
+        token=first.lease.token,
+    )
+    clock.advance(1_000)
+    running = add_job(conn, clock, settings, job_type="b")
+    claim(conn, clock, settings, w2, "b")
+    jobs, _ = store.list_jobs(
+        conn, query=JobQuery(sort=JobSort.RUNNING_LONGEST), limit=10, offset=0
+    )
+    assert [j.id for j in jobs] == [running.id, old.id]

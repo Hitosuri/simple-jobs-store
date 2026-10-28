@@ -116,6 +116,9 @@ The cleaner deletes `success` / `failed` / `cancelled` jobs whose `finishedAt` i
 | `GET /api/overview` | - | counts, worker load, pending per type, finished in the last 24 h and the 24 h before, throughput buckets, alerts, p95 run time per type |
 | `GET /api/stats` | `range` (`1h`, `24h`, `7d`) | KPIs with previous-window values, finished buckets, per-type figures, top errors |
 
+Stats buckets cover whole buckets ending with the current partial one, so they can start before the
+window; the sum of the buckets can differ from `kpis.finished`, which counts only the window.
+
 Worker calls: [`WORKER.md`](../WORKER.md) §3.
 
 ### 7.1 Operator actions
@@ -129,7 +132,8 @@ Used by the control room. Failures use the usual error envelope.
   latest attempt. Report fields are reset as for a new job: the provider gets a new report when the
   job finishes again.
 - **Priority** (`pending` only, else `JOB_NOT_PENDING` 409): changes `priority`.
-- **Delete** (finished jobs only, else `JOB_NOT_FINISHED` 409): removes the job and its attempts.
+- **Delete** (finished jobs only, else `JOB_NOT_FINISHED` 409): removes the job and its attempts. If its report is still `pending` or
+  `reporting`, that report is dropped and the provider never receives it.
 - **Bulk:** runs one action per id. Ids it could not apply to come back in `skipped` with the error
   code the single call would give (e.g. `JOB_NOT_FOUND`); the others are in `done`.
 - **Forget worker** (`DELETE /api/workers/{id}`): only an offline worker that holds no job.

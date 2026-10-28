@@ -1,6 +1,6 @@
 """Read-only insight routes: attempts window and overview."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -9,17 +9,12 @@ from fastapi.exceptions import RequestValidationError
 import stats
 from api.deps import ConnDep, NowDep
 from api.envelope import ApiOk
-from api.schemas import AttemptWindowOut, OverviewOut, StatsOut
-from domain import EpochMs, WorkerId
+from api.schemas import AttemptWindowOut, OverviewOut, StatsOut, epoch_ms
+from domain import WorkerId
 
 router = APIRouter(tags=["insights"])
 
 MAX_WINDOW_MS = 86_400_000
-
-
-def _epoch_ms(moment: datetime) -> EpochMs:
-    aware = moment if moment.tzinfo else moment.replace(tzinfo=UTC)
-    return EpochMs((aware - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(milliseconds=1))
 
 
 @router.get("/attempts")
@@ -30,7 +25,7 @@ def list_attempts(
     worker: str | None = None,
 ) -> ApiOk[list[AttemptWindowOut]]:
     """List attempts overlapping the window `from`..`to`, at most 24 hours wide."""
-    start_ms, end_ms = _epoch_ms(start), _epoch_ms(end)
+    start_ms, end_ms = epoch_ms(start), epoch_ms(end)
     if not 0 < end_ms - start_ms <= MAX_WINDOW_MS:
         raise RequestValidationError(
             [

@@ -278,10 +278,59 @@ def test_stats_previous_window_and_7d(conn: sqlite3.Connection, settings: Settin
 def test_stats_utilisation(conn: sqlite3.Connection, settings: Settings) -> None:
     worker = _worker(conn, settings, "w", START - 5 * MINUTE)
     _run(conn, settings, worker, START - 40 * MINUTE, ok=True, took=30 * MINUTE)
+    _worker(conn, settings, "w", START)
 
     result = stats.stats_for_range(conn, now=START, range_="1h")
 
     assert result.kpis.utilisation == 0.25
+
+
+def _offline_worker(conn: sqlite3.Connection, settings: Settings, name: str, limit: int) -> None:
+    register_worker(
+        conn,
+        now=EpochMs(START - HOUR),
+        settings=settings,
+        worker_id=WorkerId(name),
+        name=name,
+        ip="ip",
+        concurrent_limit=limit,
+    )
+
+
+def test_stats_utilisation_capacity_counts_online_workers_only(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    _offline_worker(conn, settings, "off", 8)
+    _worker(conn, settings, "on", START)
+    _run(conn, settings, WorkerId("off"), START - 40 * MINUTE, ok=True, took=30 * MINUTE)
+    _offline_worker(conn, settings, "off", 8)
+
+    result = stats.stats_for_range(conn, now=START, range_="1h")
+
+    assert result.kpis.utilisation == 0.25
+
+
+def test_stats_utilisation_is_capped_at_one(conn: sqlite3.Connection, settings: Settings) -> None:
+    for i in range(5):
+        _run(conn, settings, WorkerId(f"x{i}"), START - 50 * MINUTE, ok=True, took=40 * MINUTE)
+    _worker(conn, settings, "on", START)
+
+    assert stats.stats_for_range(conn, now=START, range_="1h").kpis.utilisation == 1.0
+
+
+def test_stats_utilisation_clips_to_window_and_previous_window(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    _run(conn, settings, WorkerId("a"), START - 90 * MINUTE, ok=True, took=60 * MINUTE)
+    _run(conn, settings, WorkerId("b"), START - 20 * MINUTE)
+    _run(conn, settings, WorkerId("c"), START - 150 * MINUTE, ok=True, took=40 * MINUTE)
+    _worker(conn, settings, "on", START)
+
+    result = stats.stats_for_range(conn, now=START, range_="1h")
+
+    assert result.previous is not None
+    assert result.kpis.utilisation == pytest.approx((30 + 20) / 120)
+    assert result.previous.utilisation == pytest.approx((30 + 10) / 120)
 
 
 def test_stats_top_errors_fall_back_to_outcome(
