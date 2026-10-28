@@ -140,11 +140,28 @@ def test_overview_finished_totals_buckets_and_p95(
     assert (result.finished_24h.success, result.finished_24h.failed) == (1, 1)
     assert (result.finished_prev_24h.success, result.finished_prev_24h.failed) == (1, 0)
     assert len(result.throughput) == 12
-    assert result.throughput[-1].start == START - 30 * MINUTE
+    assert result.throughput[-1].start == START
     by_start = {b.start: (b.success, b.failed) for b in result.throughput}
     assert by_start[EpochMs(START - 2 * HOUR)] == (1, 1)
     assert sum(s + f for s, f in by_start.values()) == 2
     assert result.run_p95_by_type == {"a": 57_500}
+
+
+def test_overview_throughput_bucket_edges(conn: sqlite3.Connection, settings: Settings) -> None:
+    now = START + 32 * MINUTE
+    first = START - 10 * 30 * MINUTE
+    for finished_at in (now - MINUTE, START, first, first - 1):
+        job_id = _job(conn, settings, finished_at)
+        conn.execute(
+            "UPDATE jobs SET status = 'success', finished_at = ? WHERE id = ?",
+            (finished_at, job_id),
+        )
+
+    buckets = stats.overview(conn, now=EpochMs(now)).throughput
+
+    assert (buckets[0].start, buckets[-1].start) == (first, START + 30 * MINUTE)
+    assert [b.success for b in buckets] == [1] + [0] * 9 + [1, 1]
+    assert [b.start for b in buckets][10] == START
 
 
 @pytest.mark.parametrize(("lost_ago", "alerts"), [(30 * MINUTE, 1), (2 * HOUR, 0)])

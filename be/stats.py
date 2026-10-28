@@ -186,8 +186,8 @@ def _finished(conn: sqlite3.Connection, start: int, end: int) -> FinishedCounts:
 
 
 def _throughput(conn: sqlite3.Connection, now: EpochMs) -> list[Bucket]:
-    end = now // BUCKET_MS * BUCKET_MS
-    first = end - BUCKET_COUNT * BUCKET_MS
+    first = now // BUCKET_MS * BUCKET_MS - (BUCKET_COUNT - 1) * BUCKET_MS
+    end = first + BUCKET_COUNT * BUCKET_MS
     rows = conn.execute(
         "SELECT (finished_at - :first) / :size AS slot,"
         " COALESCE(SUM(status = 'success'), 0) AS ok,"
