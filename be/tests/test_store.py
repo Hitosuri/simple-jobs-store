@@ -574,6 +574,39 @@ def test_release_returns_job_to_pending_without_using_an_attempt(
     assert finish(conn, clock, settings, again, BOOM).status is JobStatus.PENDING
 
 
+def test_used_attempts_counts_only_attempts_started_since_requeue(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    job = add_job(conn, clock, settings, max_attempt=10)
+
+    def fail_once() -> None:
+        clock.advance(settings.backoff_cap_ms)
+        add_worker(conn, clock, settings)
+        finish(conn, clock, settings, claim(conn, clock, settings, wid), BOOM)
+
+    fail_once()
+    fail_once()
+    clock.advance(1)
+    requeued_at = clock()
+    fail_once()
+    clock.advance(settings.backoff_cap_ms)
+    add_worker(conn, clock, settings)
+    release(conn, clock, settings, claim(conn, clock, settings, wid))
+    running = claim(conn, clock, settings, wid)
+    assert store._used_attempts(conn, job.id, None) == 3  # noqa: SLF001
+    assert store._used_attempts(conn, job.id, requeued_at) == 1  # noqa: SLF001
+    assert running.job.attempts_used == 3
+
+
+def test_attempts_used_is_zero_for_a_fresh_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = add_job(conn, clock, settings)
+    assert job.attempts_used == 0
+    assert job.requeued_at is None
+
+
 def test_released_job_comes_after_fresh_jobs_for_the_same_worker(
     conn: sqlite3.Connection, clock: FakeClock, settings: Settings
 ) -> None:

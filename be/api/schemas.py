@@ -243,6 +243,8 @@ class JobOut(CamelModel):
     report_next_at: datetime | None
     report_error: str | None
     progress: list[ProgressStepOut] | None
+    requeued_at: datetime | None
+    attempts_used: int
 
     @classmethod
     def build(cls, job: Job) -> Self:
@@ -278,6 +280,8 @@ class JobOut(CamelModel):
             progress=None
             if job.progress is None
             else [ProgressStepOut.build(step) for step in job.progress],
+            requeued_at=_opt_dt(job.requeued_at),
+            attempts_used=job.attempts_used,
         )
 
 

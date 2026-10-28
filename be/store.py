@@ -75,7 +75,7 @@ def _to_worker(row: sqlite3.Row) -> Worker:
     )
 
 
-def _to_job(row: sqlite3.Row) -> Job:
+def _to_job(conn: sqlite3.Connection, row: sqlite3.Row) -> Job:
     # STRICT column types and the jobs CHECKs guarantee the lease columns are all set or all NULL.
     lease = None
     if row["lease_token"] is not None:
@@ -95,6 +95,7 @@ def _to_job(row: sqlite3.Row) -> Job:
             next_at=_opt_ms(row["report_next_at"]),
             error=row["report_error"],
         )
+    requeued_at = _opt_ms(row["requeued_at"])
     return Job(
         id=JobId(row["id"]),
         type=row["type"],
@@ -116,6 +117,8 @@ def _to_job(row: sqlite3.Row) -> Job:
         finished_at=_opt_ms(row["finished_at"]),
         report=report,
         progress=None if row["progress"] is None else _STEPS.validate_json(row["progress"]),
+        requeued_at=requeued_at,
+        attempts_used=_used_attempts(conn, JobId(row["id"]), requeued_at),
     )
 
 
@@ -137,7 +140,7 @@ def _load_job(conn: sqlite3.Connection, job_id: JobId) -> Job:
     row = _one(conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)))
     if row is None:
         raise JobNotFoundError
-    return _to_job(row)
+    return _to_job(conn, row)
 
 
 def register_worker(
@@ -285,7 +288,7 @@ def create_job(
                 },
             ),
         )
-    return _to_job(row)
+    return _to_job(conn, row)
 
 
 def get_job(conn: sqlite3.Connection, *, job_id: JobId) -> tuple[Job, list[Attempt]]:
@@ -324,7 +327,7 @@ def list_jobs(
         """,
         params,
     )
-    jobs = [_to_job(r) for r in rows]
+    jobs = [_to_job(conn, r) for r in rows]
     total = _count(
         conn.execute(
             "SELECT COUNT(*) FROM jobs"
@@ -426,6 +429,17 @@ def _count(cursor: sqlite3.Cursor) -> int:
     return value
 
 
+def _used_attempts(conn: sqlite3.Connection, job_id: JobId, requeued_at: EpochMs | None) -> int:
+    return _count(
+        conn.execute(
+            "SELECT COUNT(*) FROM job_attempts WHERE job_id = ?"
+            " AND outcome IS NOT 'released' AND outcome IS NOT NULL"
+            " AND (? IS NULL OR started_at >= ?)",
+            (job_id, requeued_at, requeued_at),
+        ),
+    )
+
+
 def _end_attempt(
     conn: sqlite3.Connection,
     *,
@@ -462,12 +476,7 @@ def _retry_or_fail(
     error: str,
     error_detail: str | None,
 ) -> None:
-    used = _count(
-        conn.execute(
-            "SELECT COUNT(*) FROM job_attempts WHERE job_id = ? AND outcome IS NOT 'released'",
-            (job.id,),
-        ),
-    )
+    used = _used_attempts(conn, job.id, job.requeued_at)
     params = {"now": now, "error": error, "error_detail": error_detail, "id": job.id}
     if used >= job.max_attempt:
         conn.execute(
@@ -880,7 +889,7 @@ def take_due_report(
         ).fetchall()
         for stuck in overdue:
             _advance_report(
-                conn, now=now, settings=settings, job=_to_job(stuck), error="interrupted"
+                conn, now=now, settings=settings, job=_to_job(conn, stuck), error="interrupted"
             )
         row = _one(
             conn.execute(
@@ -891,7 +900,7 @@ def take_due_report(
         )
         if row is None:
             return None
-        job = _to_job(row)
+        job = _to_job(conn, row)
         report = job.report
         if report is None:
             raise TypeError
@@ -941,4 +950,4 @@ def record_report(
                 (job_id,),
             )
             return
-        _advance_report(conn, now=now, settings=settings, job=_to_job(row), error=error)
+        _advance_report(conn, now=now, settings=settings, job=_to_job(conn, row), error=error)

@@ -1,8 +1,9 @@
 import sqlite3
+from pathlib import Path
 
 import pytest
 
-from db import transaction
+from db import SCHEMA, connect, init_schema, transaction
 
 INSERT_JOB = """
 INSERT INTO jobs (type, description, max_run_ms, available_at, status, max_attempt,
@@ -45,6 +46,16 @@ def test_lease_invariant_is_enforced(
     conn.execute("INSERT INTO workers VALUES ('w1', 'n', '127.0.0.1', 1, 0, 0, 0)")
     with pytest.raises(sqlite3.IntegrityError), transaction(conn):
         conn.execute(INSERT_JOB, (status, worker_id, token, lease_until, deadline_at))
+
+
+def test_init_schema_adds_requeued_at_to_an_old_jobs_table(tmp_path: Path) -> None:
+    conn = connect(str(tmp_path / "old.db"))
+    conn.executescript(SCHEMA.replace("  requeued_at    INTEGER,\n", ""))
+    assert "requeued_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
+    init_schema(conn)
+    assert "requeued_at" in {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
+    init_schema(conn)
+    conn.close()
 
 
 def test_transaction_rolls_back_on_error(conn: sqlite3.Connection) -> None:

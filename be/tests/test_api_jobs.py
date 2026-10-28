@@ -53,6 +53,16 @@ def test_create_job_returns_201_with_defaults(client: TestClient, settings: Sett
     assert job["result"] is None
 
 
+def test_job_out_has_attempts_used_and_requeued_at(client: TestClient) -> None:
+    job = create(client)
+    assert job["attemptsUsed"] == 0
+    assert job["requeuedAt"] is None
+    register(client)
+    claimed = claim(client)
+    assert claimed["job"]["attemptsUsed"] == 0
+    assert client.get(f"/api/jobs/{job['id']}").json()["data"]["job"]["attemptsUsed"] == 0
+
+
 @pytest.mark.parametrize(
     "body",
     [

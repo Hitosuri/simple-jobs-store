@@ -180,6 +180,8 @@ class Job:
     finished_at: EpochMs | None
     report: Report | None
     progress: list[ProgressStep] | None
+    requeued_at: EpochMs | None
+    attempts_used: int
 
 
 @dataclass(frozen=True, slots=True)

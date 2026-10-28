@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   report_next_at INTEGER,
   report_error   TEXT,
   progress       TEXT,
+  requeued_at    INTEGER,
   CHECK ((status = 'running') = (lease_token IS NOT NULL)),
   CHECK ((lease_token IS NULL) = (worker_id IS NULL)),
   CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
@@ -94,8 +95,12 @@ def connect(db_path: str) -> sqlite3.Connection:
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
-    """Create tables and indexes if missing."""
+    """Create tables and indexes if missing, and add columns an older `jobs` table lacks."""
     conn.executescript(SCHEMA)
+    # No migration framework, and CREATE TABLE IF NOT EXISTS skips a table that already exists.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+    if "requeued_at" not in columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN requeued_at INTEGER")
 
 
 @contextmanager
