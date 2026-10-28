@@ -41,6 +41,16 @@ export function Slot({ job, now, p95 }: { job?: RunningJob; now: number; p95?: n
   );
 }
 
+export function PlainDot({ job }: { job?: RunningJob }) {
+  return (
+    <span
+      aria-hidden
+      className={cn('block h-3.5 w-[9px] shrink-0 rounded-[3px]', !job && 'border border-dashed border-border')}
+      style={job ? { background: typeColorVar(job.type) } : undefined}
+    />
+  );
+}
+
 export function SlotDot({ job, now }: { job?: RunningJob; now?: number }) {
   const base = 'block h-3.5 w-[9px] shrink-0 rounded-[3px]';
   if (!job) return <span aria-hidden className={cn(base, 'border border-dashed border-border')} />;

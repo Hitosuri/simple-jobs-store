@@ -1,4 +1,15 @@
+import { useState } from 'react';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { api } from '@/api/client';
 import { useBulk } from '@/api/mutations';
 import type { Finished, Job, Page, TypeQueue } from '@/api/types';
@@ -34,6 +45,7 @@ function Kpi({
 
 function RetryAll({ failed }: { failed: number }) {
   const bulk = useBulk();
+  const [open, setOpen] = useState(false);
 
   async function run() {
     const ids: number[] = [];
@@ -53,35 +65,56 @@ function RetryAll({ failed }: { failed: number }) {
   }
 
   return (
-    <Button
-      variant="link"
-      size="sm"
-      disabled={bulk.isPending}
-      onClick={() => run().catch((e: Error) => toast.error(e.message))}
-      className="h-auto p-0 text-xs underline underline-offset-3 max-md:min-h-11"
-    >
-      Retry all
-    </Button>
+    <>
+      <Button
+        variant="link"
+        size="sm"
+        disabled={bulk.isPending}
+        onClick={() => setOpen(true)}
+        className="h-auto p-0 text-xs underline underline-offset-3 max-md:min-h-11"
+      >
+        Retry all
+      </Button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retry {formatNumber(failed)} failed jobs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every job currently failed is requeued with a fresh attempt budget, whatever its age.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => run().catch((e: Error) => toast.error(e.message))}>
+              Retry {formatNumber(failed)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
 export function KpiCard({
   pending,
+  failedNow,
   queues,
   finished,
   previous,
   now,
 }: {
   pending: number;
+  failedNow: number;
   queues: TypeQueue[];
   finished: Finished;
   previous: Finished;
   now: number;
 }) {
   const oldest = queues.length ? now - Math.min(...queues.map((q) => Date.parse(q.oldestAvailableAt))) : null;
-  const rate = rateOf(finished);
+  const rawRate = rateOf(finished);
+  const rate = rawRate === null ? null : Math.round(rawRate * 1000) / 1000;
   const prev = rateOf(previous);
-  const delta = rate !== null && prev !== null ? (rate - prev) * 100 : null;
+  const delta = rawRate !== null && prev !== null ? Math.round((rawRate - prev) * 1000) / 10 : null;
 
   return (
     <Card className="gap-0 py-0">
@@ -92,10 +125,10 @@ export function KpiCard({
         <Kpi label="Success · 24h" value={formatPercent(rate)} tone={rateTone(rate)}>
           {delta === null
             ? `${formatNumber(finished.success + finished.failed)} jobs`
-            : `${delta >= 0 ? '+' : '-'}${Math.abs(delta).toFixed(1)} pts vs previous 24h`}
+            : `${delta > 0 ? '+' : delta < 0 ? '-' : ''}${Math.abs(delta).toFixed(1)} pts vs previous 24h`}
         </Kpi>
         <Kpi label="Failed · 24h" value={formatNumber(finished.failed)} tone={failedTone(finished.failed)}>
-          {finished.failed > 0 ? <RetryAll failed={finished.failed} /> : 'none in 24h'}
+          {failedNow > 0 ? <RetryAll failed={failedNow} /> : 'none in 24h'}
         </Kpi>
       </div>
     </Card>

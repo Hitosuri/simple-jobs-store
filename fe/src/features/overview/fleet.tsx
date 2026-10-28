@@ -4,7 +4,7 @@ import type { WorkerLoad } from '@/api/types';
 import { Card } from '@/components/ui/card';
 import { formatAgo, formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { Slot, SlotDot } from './slot';
+import { PlainDot, Slot, SlotDot } from './slot';
 
 const DOT_STRIP_ABOVE = 8;
 
@@ -73,30 +73,39 @@ function Machine({
   const lost = loads.length - live.length;
   const total = live.reduce((n, l) => n + l.worker.concurrentLimit, 0);
   const busy = live.reduce((n, l) => n + l.running.length, 0);
+  const summary = (
+    <>
+      <b className="mr-1 text-[13px] font-semibold text-foreground">{ip}</b>
+      <span className="tabular-nums">
+        {loads.length} {loads.length === 1 ? 'worker' : 'workers'}
+        {busy === 0 && !lost ? ' · idle' : ` · ${busy}/${total} slots`}
+      </span>
+      {lost > 0 && <span className="text-bad">· {lost} lost</span>}
+    </>
+  );
   return (
     <div className="mt-2.5 border-t border-border pt-2.5">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex min-h-11 w-full flex-wrap items-center gap-x-1.5 gap-y-1 text-left text-xs text-muted-foreground md:pointer-events-none md:min-h-0"
+        className="flex min-h-11 w-full flex-wrap items-center gap-x-1.5 gap-y-1 text-left text-xs text-muted-foreground md:hidden"
       >
-        <b className="mr-1 text-[13px] font-semibold text-foreground">{ip}</b>
-        <span className="tabular-nums">
-          {loads.length} {loads.length === 1 ? 'worker' : 'workers'}
-          {busy === 0 && !lost ? ' · idle' : ` · ${busy}/${total} slots`}
-        </span>
-        {lost > 0 && <span className="text-bad">· {lost} lost</span>}
-        <span className="flex basis-full flex-wrap gap-[3px] pb-1.5 md:hidden">
+        {summary}
+        <span className="flex basis-full flex-wrap gap-[3px] pb-1.5">
           {live.flatMap((l) => {
             const { running, idle } = slotsOf(l);
             return [
-              ...running.map((job) => <SlotDot key={job.id} job={job} now={now} />),
-              ...Array.from({ length: idle }, (_, i) => <SlotDot key={`${l.worker.id}-${i}`} />),
+              ...running.map((job) => <PlainDot key={job.id} job={job} />),
+              ...Array.from({ length: idle }, (_, i) => <PlainDot key={`${l.worker.id}-${i}`} />),
             ];
           })}
         </span>
+        <span className="sr-only">
+          {busy} of {total} slots busy
+        </span>
       </button>
+      <div className="hidden flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground md:flex">{summary}</div>
       <div className={cn(!open && 'max-md:hidden')}>
         {loads.map((load) => (
           <WorkerRow key={load.worker.id} load={load} now={now} p95={p95} />

@@ -42,6 +42,7 @@ function Overview() {
             <div className="flex flex-col gap-3">
               <KpiCard
                 pending={data.counts.pending}
+                failedNow={data.counts.failed}
                 queues={data.pendingByType}
                 finished={data.finished24H}
                 previous={data.finishedPrev24H}
@@ -58,10 +59,10 @@ function Overview() {
         <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
           <Placeholder className="h-80" error={failure} />
           <div className="flex flex-col gap-3">
-            <Placeholder className="h-44" error={failure} />
-            <Placeholder className="h-28" error={failure} />
+            <Placeholder className="h-44" />
+            <Placeholder className="h-28" />
           </div>
-          <Placeholder className="h-60 lg:col-span-2" error={failure} />
+          <Placeholder className="h-60 lg:col-span-2" />
         </div>
       )}
     </>

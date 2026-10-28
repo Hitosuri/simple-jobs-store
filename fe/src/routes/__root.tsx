@@ -11,7 +11,7 @@ function RootLayout() {
     <TooltipProvider>
       <div className="flex min-h-screen">
         <Sidebar />
-        <main className="min-w-0 flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))]lg:p-6 lg:pb-6">
+        <main className="min-w-0 flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:p-6 lg:pb-6">
           <Outlet />
         </main>
       </div>
