@@ -1,3 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { WorkerDrawer } from '@/features/machines/worker-drawer';
 
-export const Route = createFileRoute('/machines/$workerId')({ component: () => <p>Machine detail</p> });
+function WorkerRoute() {
+  const { workerId } = Route.useParams();
+  const navigate = useNavigate();
+  return <WorkerDrawer workerId={workerId} onClose={() => navigate({ to: '/machines', search: (prev) => prev })} />;
+}
+
+export const Route = createFileRoute('/machines/$workerId')({ component: WorkerRoute });
