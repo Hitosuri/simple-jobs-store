@@ -74,7 +74,7 @@ def _epoch_ms(moment: datetime | None) -> EpochMs | None:
 
 def get_job_query(
     statuses: Annotated[list[JobStatus] | None, Query(alias="status")] = None,
-    job_type: Annotated[str | None, Query(alias="type")] = None,
+    job_types: Annotated[list[str] | None, Query(alias="type")] = None,
     worker: str | None = None,
     q: str | None = None,
     created_from: Annotated[datetime | None, Query(alias="createdFrom")] = None,
@@ -84,7 +84,7 @@ def get_job_query(
     """Build the job filters from the query string."""
     return JobQuery(
         statuses=tuple(statuses or ()),
-        job_type=job_type,
+        job_types=tuple(job_types or ()),
         worker_id=None if worker is None else WorkerId(worker),
         q=q,
         created_from=_epoch_ms(created_from),

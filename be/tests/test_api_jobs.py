@@ -109,9 +109,15 @@ def test_get_unknown_job(client: TestClient) -> None:
 def test_list_jobs_filters(client: TestClient) -> None:
     create(client, type="a")
     create(client, type="b")
+    create(client, type="c")
     assert [j["type"] for j in client.get("/api/jobs?type=a").json()["data"]["items"]] == ["a"]
+    both = client.get("/api/jobs?type=a&type=b").json()["data"]
+    assert sorted(j["type"] for j in both["items"]) == ["a", "b"]
+    assert both["total"] == 2
+    counts = client.get("/api/jobs/counts?type=a&type=b").json()["data"]
+    assert counts["pending"] == 2
     assert client.get("/api/jobs?status=running").json()["data"]["items"] == []
-    assert len(client.get("/api/jobs").json()["data"]["items"]) == 2
+    assert len(client.get("/api/jobs").json()["data"]["items"]) == 3
 
 
 def test_list_jobs_returns_a_page(client: TestClient) -> None:

@@ -254,9 +254,12 @@ def test_list_jobs_filters_and_orders_newest_first(
     jobs, total = store.list_jobs(conn, query=JobQuery(), limit=10, offset=0)
     assert [j.id for j in jobs] == [third.id, second.id, first.id]
     assert total == 3
-    jobs, total = store.list_jobs(conn, query=JobQuery(job_type="a"), limit=10, offset=0)
+    jobs, total = store.list_jobs(conn, query=JobQuery(job_types=("a",)), limit=10, offset=0)
     assert [j.id for j in jobs] == [third.id, first.id]
     assert total == 2
+    jobs, total = store.list_jobs(conn, query=JobQuery(job_types=("a", "b")), limit=10, offset=0)
+    assert [j.id for j in jobs] == [third.id, second.id, first.id]
+    assert total == 3
     running = JobQuery(statuses=(JobStatus.RUNNING,))
     assert store.list_jobs(conn, query=running, limit=10, offset=0) == ([], 0)
 
@@ -284,7 +287,11 @@ def test_count_jobs_by_status_ignores_statuses_and_lists_every_status(
         JobStatus.FAILED: 0,
         JobStatus.CANCELLED: 0,
     }
-    assert store.count_jobs_by_status(conn, query=JobQuery(job_type="a"))[JobStatus.PENDING] == 1
+    assert (
+        store.count_jobs_by_status(conn, query=JobQuery(job_types=("a",)))[JobStatus.PENDING] == 1
+    )
+    both = JobQuery(job_types=("a", "b"))
+    assert store.count_jobs_by_status(conn, query=both)[JobStatus.PENDING] == 2
 
 
 def test_last_worker_id_is_newest_attempt_worker(

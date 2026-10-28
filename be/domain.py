@@ -204,7 +204,7 @@ class JobQuery:
     """Filters and order of a job listing; empty filters match everything."""
 
     statuses: tuple[JobStatus, ...] = ()
-    job_type: str | None = None
+    job_types: tuple[str, ...] = ()
     worker_id: WorkerId | None = None
     q: str | None = None
     created_from: EpochMs | None = None

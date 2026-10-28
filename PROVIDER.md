@@ -70,7 +70,7 @@ Branch on `ok` and `error.code`, not on HTTP status or `message`.
 |---|---|---|
 | `POST /jobs` | `type` (non-empty), `description` (JSON, required, may be `null`), `maxAttempt?` (1..100), `maxRunMs?` (1..86 400 000), `priority?` (int32), `reports?` (1..10 methods, §4) | job, HTTP 201 |
 | `GET /jobs/{jobId}` | - | `{job, attempts}`, attempts oldest first |
-| `GET /jobs` | `status?`, `type?`, `worker?` (all three repeatable), `q?` (job id, or literal substring of the description), `createdFrom?` / `createdTo?` (ISO), `sort?` (`newest` default, `oldest`, `priority`, `running_longest`), `page?` (≥ 1, default 1), `pageSize?` (1..1000, default 100) | `{items, page, pageSize, total}`, items in `sort` order |
+| `GET /jobs` | `status?` and `type?` (both repeatable), `worker?` (single), `q?` (job id, or literal substring of the description), `createdFrom?` / `createdTo?` (ISO), `sort?` (`newest` default, `oldest`, `priority`, `running_longest`), `page?` (≥ 1, default 1), `pageSize?` (1..1000, default 100) | `{items, page, pageSize, total}`, items in `sort` order |
 | `POST /jobs/{jobId}/cancel` | - | job |
 
 Create a job:

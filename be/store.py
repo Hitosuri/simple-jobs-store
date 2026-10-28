@@ -421,9 +421,10 @@ def _where(query: JobQuery, *, with_statuses: bool) -> tuple[str, dict[str, obje
         params.update(
             {name[1:]: status.value for name, status in zip(names, query.statuses, strict=True)}
         )
-    if query.job_type is not None:
-        clauses.append("type = :type")
-        params["type"] = query.job_type
+    if query.job_types:
+        names = [f":type{i}" for i in range(len(query.job_types))]
+        clauses.append(f"type IN ({', '.join(names)})")
+        params.update({name[1:]: t for name, t in zip(names, query.job_types, strict=True)})
     if query.worker_id is not None:
         clauses.append(
             "EXISTS (SELECT 1 FROM job_attempts a"
