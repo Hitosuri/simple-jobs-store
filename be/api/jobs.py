@@ -1,9 +1,10 @@
 """Job routes."""
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Path, Query, status
+from fastapi import APIRouter, Depends, Path, Query, status
 
 import store
 from api.deps import ConnDep, NowDep, PageDep, SettingsDep
@@ -16,6 +17,7 @@ from api.schemas import (
     ClaimOut,
     FinishBody,
     FinishSuccessBody,
+    JobCountsOut,
     JobCreateBody,
     JobDetailOut,
     JobHeartbeatBody,
@@ -25,7 +27,17 @@ from api.schemas import (
     LeaseBody,
     Page,
 )
-from domain import FailureReport, JobId, JobStatus, StoreError, SuccessReport
+from domain import (
+    EpochMs,
+    FailureReport,
+    JobId,
+    JobQuery,
+    JobSort,
+    JobStatus,
+    StoreError,
+    SuccessReport,
+    WorkerId,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,21 +65,41 @@ def create_job(
     return ApiOk[JobOut](data=JobOut.build(job))
 
 
-@router.get("")
-def list_jobs(
-    conn: ConnDep,
-    paging: PageDep,
-    job_status: Annotated[JobStatus | None, Query(alias="status")] = None,
+def _epoch_ms(moment: datetime | None) -> EpochMs | None:
+    if moment is None:
+        return None
+    aware = moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+    return EpochMs((aware - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(milliseconds=1))
+
+
+def get_job_query(
+    statuses: Annotated[list[JobStatus] | None, Query(alias="status")] = None,
     job_type: Annotated[str | None, Query(alias="type")] = None,
-) -> ApiOk[Page[JobOut]]:
-    """List one page of jobs, newest first."""
-    jobs, total = store.list_jobs(
-        conn,
-        status=job_status,
+    worker: str | None = None,
+    q: str | None = None,
+    created_from: Annotated[datetime | None, Query(alias="createdFrom")] = None,
+    created_to: Annotated[datetime | None, Query(alias="createdTo")] = None,
+    sort: JobSort = JobSort.NEWEST,
+) -> JobQuery:
+    """Build the job filters from the query string."""
+    return JobQuery(
+        statuses=tuple(statuses or ()),
         job_type=job_type,
-        limit=paging.page_size,
-        offset=paging.offset,
+        worker_id=None if worker is None else WorkerId(worker),
+        q=q,
+        created_from=_epoch_ms(created_from),
+        created_to=_epoch_ms(created_to),
+        sort=sort,
     )
+
+
+JobQueryDep = Annotated[JobQuery, Depends(get_job_query)]
+
+
+@router.get("")
+def list_jobs(conn: ConnDep, paging: PageDep, query: JobQueryDep) -> ApiOk[Page[JobOut]]:
+    """List one page of jobs matching the filters, newest first by default."""
+    jobs, total = store.list_jobs(conn, query=query, limit=paging.page_size, offset=paging.offset)
     return ApiOk[Page[JobOut]](
         data=Page[JobOut](
             items=[JobOut.build(j) for j in jobs],
@@ -75,6 +107,15 @@ def list_jobs(
             page_size=paging.page_size,
             total=total,
         )
+    )
+
+
+@router.get("/counts")
+def job_counts(conn: ConnDep, query: JobQueryDep) -> ApiOk[JobCountsOut]:
+    """Count jobs per status under the other filters; `status` is ignored."""
+    counts = store.count_jobs_by_status(conn, query=query)
+    return ApiOk[JobCountsOut](
+        data=JobCountsOut(**{status.value: n for status, n in counts.items()})
     )
 
 

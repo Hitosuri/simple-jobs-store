@@ -21,6 +21,7 @@ from domain import (
     JobNotFoundError,
     JobNotPendingError,
     JobNotRetryableError,
+    JobQuery,
     JobStatus,
     Lease,
     LeaseRejectedError,
@@ -191,26 +192,51 @@ def test_list_jobs_filters_and_orders_newest_first(
     first = add_job(conn, clock, settings, job_type="a")
     second = add_job(conn, clock, settings, job_type="b")
     third = add_job(conn, clock, settings, job_type="a")
-    jobs, total = store.list_jobs(conn, status=None, job_type=None, limit=10, offset=0)
+    jobs, total = store.list_jobs(conn, query=JobQuery(), limit=10, offset=0)
     assert [j.id for j in jobs] == [third.id, second.id, first.id]
     assert total == 3
-    jobs, total = store.list_jobs(conn, status=None, job_type="a", limit=10, offset=0)
+    jobs, total = store.list_jobs(conn, query=JobQuery(job_type="a"), limit=10, offset=0)
     assert [j.id for j in jobs] == [third.id, first.id]
     assert total == 2
-    assert store.list_jobs(conn, status=JobStatus.RUNNING, job_type=None, limit=10, offset=0) == (
-        [],
-        0,
-    )
+    running = JobQuery(statuses=(JobStatus.RUNNING,))
+    assert store.list_jobs(conn, query=running, limit=10, offset=0) == ([], 0)
 
 
 def test_list_jobs_pages_with_offset_and_counts_all_matches(
     conn: sqlite3.Connection, clock: FakeClock, settings: Settings
 ) -> None:
     ids = [add_job(conn, clock, settings).id for _ in range(5)]
-    jobs, total = store.list_jobs(conn, status=None, job_type=None, limit=2, offset=2)
+    jobs, total = store.list_jobs(conn, query=JobQuery(), limit=2, offset=2)
     assert [j.id for j in jobs] == [ids[2], ids[1]]
     assert total == 5
-    assert store.list_jobs(conn, status=None, job_type=None, limit=2, offset=10) == ([], 5)
+    assert store.list_jobs(conn, query=JobQuery(), limit=2, offset=10) == ([], 5)
+
+
+def test_count_jobs_by_status_ignores_statuses_and_lists_every_status(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    add_job(conn, clock, settings, job_type="a")
+    add_job(conn, clock, settings, job_type="b")
+    counts = store.count_jobs_by_status(conn, query=JobQuery(statuses=(JobStatus.FAILED,)))
+    assert counts == {
+        JobStatus.PENDING: 2,
+        JobStatus.RUNNING: 0,
+        JobStatus.SUCCESS: 0,
+        JobStatus.FAILED: 0,
+        JobStatus.CANCELLED: 0,
+    }
+    assert store.count_jobs_by_status(conn, query=JobQuery(job_type="a"))[JobStatus.PENDING] == 1
+
+
+def test_last_worker_id_is_newest_attempt_worker(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = add_job(conn, clock, settings)
+    assert job.last_worker_id is None
+    w1 = add_worker(conn, clock, settings, "w1")
+    claimed = claim(conn, clock, settings, w1)
+    assert claimed.job.last_worker_id == w1
+    assert store.get_job(conn, job_id=job.id)[0].last_worker_id == w1
 
 
 def claim(

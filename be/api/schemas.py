@@ -289,6 +289,7 @@ class JobOut(CamelModel):
     progress: list[ProgressStepOut] | None
     requeued_at: datetime | None
     attempts_used: int
+    last_worker_id: str | None
 
     @classmethod
     def build(cls, job: Job) -> Self:
@@ -326,7 +327,18 @@ class JobOut(CamelModel):
             else [ProgressStepOut.build(step) for step in job.progress],
             requeued_at=_opt_dt(job.requeued_at),
             attempts_used=job.attempts_used,
+            last_worker_id=job.last_worker_id,
         )
+
+
+class JobCountsOut(CamelModel):
+    """Number of jobs per status."""
+
+    pending: int
+    running: int
+    success: int
+    failed: int
+    cancelled: int
 
 
 class ReportBody(CamelModel):

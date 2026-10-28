@@ -553,3 +553,91 @@ def test_api_bulk_priority_cancel_delete(client: TestClient) -> None:
 )
 def test_api_bulk_rejects_invalid_body(client: TestClient, body: dict[str, Any]) -> None:
     assert client.post("/api/jobs/bulk", json=body).status_code == 422
+
+
+def ids(client: TestClient, query: str) -> list[int]:
+    resp = client.get(f"/api/jobs?{query}")
+    assert resp.status_code == 200
+    return [j["id"] for j in resp.json()["data"]["items"]]
+
+
+def test_list_jobs_repeated_status(client: TestClient) -> None:
+    register(client)
+    first = create(client)
+    second = create(client)
+    third = create(client)
+    claim(client)
+    client.post(f"/api/jobs/{third['id']}/cancel")
+    client.post(f"/api/jobs/{second['id']}/cancel")
+    assert ids(client, "status=cancelled&status=running") == [
+        third["id"],
+        second["id"],
+        first["id"],
+    ]
+    assert ids(client, "status=cancelled") == [third["id"], second["id"]]
+
+
+def test_list_jobs_worker_filter(client: TestClient) -> None:
+    register(client, "w1")
+    register(client, "w2")
+    job = create(client)
+    create(client)
+    claim(client, "w1")
+    assert ids(client, "worker=w1") == [job["id"]]
+    assert ids(client, "worker=w2") == []
+
+
+def test_list_jobs_q_matches_description_literally(client: TestClient) -> None:
+    pct = create(client, description={"p": "50%"})
+    create(client, description={"p": "500"})
+    under = create(client, description={"p": "a_b"})
+    create(client, description={"p": "axb"})
+    assert ids(client, "q=50%25") == [pct["id"]]
+    assert ids(client, "q=a_b") == [under["id"]]
+
+
+def test_list_jobs_q_digits_also_matches_id(client: TestClient) -> None:
+    jobs = [create(client) for _ in range(12)]
+    assert ids(client, "q=12") == [jobs[11]["id"]]
+
+
+def test_list_jobs_created_range(client: TestClient, clock: FakeClock) -> None:
+    a = create(client)
+    clock.advance(60_000)
+    b = create(client)
+    assert ids(client, "createdFrom=2027-01-15T08:00:30Z") == [b["id"]]
+    assert ids(client, "createdTo=2027-01-15T08:00:30Z") == [a["id"]]
+
+
+def test_list_jobs_sorts(client: TestClient, clock: FakeClock) -> None:
+    register(client, "w1")
+    register(client, "w2")
+    low = create(client, priority=1)
+    high = create(client, priority=9)
+    assert ids(client, "sort=oldest") == [low["id"], high["id"]]
+    assert ids(client, "sort=priority") == [high["id"], low["id"]]
+    assert ids(client, "sort=newest") == [high["id"], low["id"]]
+    claim(client, "w1")
+    clock.advance(1_000)
+    claim(client, "w2")
+    assert ids(client, "status=running&sort=running_longest") == [high["id"], low["id"]]
+
+
+def test_list_jobs_rejects_bad_sort(client: TestClient) -> None:
+    assert client.get("/api/jobs?sort=nope").status_code == 422
+
+
+def test_job_counts_respect_type_and_ignore_status(client: TestClient) -> None:
+    register(client)
+    create(client, type="t")
+    create(client, type="x")
+    claim(client)
+    data = client.get("/api/jobs/counts?type=t&status=failed").json()["data"]
+    assert data == {"pending": 0, "running": 1, "success": 0, "failed": 0, "cancelled": 0}
+
+
+def test_last_worker_id_after_attempt_and_null_when_never_claimed(client: TestClient) -> None:
+    register(client)
+    assert create(client)["lastWorkerId"] is None
+    job_id = claim(client)["job"]["id"]
+    assert client.get(f"/api/jobs/{job_id}").json()["data"]["job"]["lastWorkerId"] == "w1"

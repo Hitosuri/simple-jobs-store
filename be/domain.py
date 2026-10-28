@@ -185,6 +185,29 @@ class Job:
     progress: list[ProgressStep] | None
     requeued_at: EpochMs | None
     attempts_used: int
+    last_worker_id: WorkerId | None
+
+
+class JobSort(StrEnum):
+    """Order of a job listing."""
+
+    NEWEST = "newest"
+    OLDEST = "oldest"
+    PRIORITY = "priority"
+    RUNNING_LONGEST = "running_longest"
+
+
+@dataclass(frozen=True, slots=True)
+class JobQuery:
+    """Filters and order of a job listing; empty filters match everything."""
+
+    statuses: tuple[JobStatus, ...] = ()
+    job_type: str | None = None
+    worker_id: WorkerId | None = None
+    q: str | None = None
+    created_from: EpochMs | None = None
+    created_to: EpochMs | None = None
+    sort: JobSort = JobSort.NEWEST
 
 
 @dataclass(frozen=True, slots=True)

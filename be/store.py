@@ -22,6 +22,8 @@ from domain import (
     JobNotFoundError,
     JobNotPendingError,
     JobNotRetryableError,
+    JobQuery,
+    JobSort,
     JobStatus,
     Lease,
     LeaseRejectedError,
@@ -122,7 +124,18 @@ def _to_job(conn: sqlite3.Connection, row: sqlite3.Row) -> Job:
         progress=None if row["progress"] is None else _STEPS.validate_json(row["progress"]),
         requeued_at=requeued_at,
         attempts_used=_used_attempts(conn, JobId(row["id"]), requeued_at),
+        last_worker_id=_last_worker(conn, JobId(row["id"]), row["attempt"]),
     )
+
+
+def _last_worker(conn: sqlite3.Connection, job_id: JobId, attempt: int) -> WorkerId | None:
+    row = _one(
+        conn.execute(
+            "SELECT worker_id FROM job_attempts WHERE job_id = ? AND attempt_no = ?",
+            (job_id, attempt),
+        )
+    )
+    return None if row is None else WorkerId(row["worker_id"])
 
 
 def _to_attempt(row: sqlite3.Row) -> Attempt:
@@ -310,35 +323,84 @@ def get_job(conn: sqlite3.Connection, *, job_id: JobId) -> tuple[Job, list[Attem
 def list_jobs(
     conn: sqlite3.Connection,
     *,
-    status: JobStatus | None,
-    job_type: str | None,
+    query: JobQuery,
     limit: int,
     offset: int,
 ) -> tuple[list[Job], int]:
-    """Return one page of jobs newest first, optionally filtered by status and type.
+    """Return one page of jobs matching `query`, in `query.sort` order.
 
     Returns:
         The page's jobs and the number of jobs matching the filters.
     """
-    params = {"status": status, "type": job_type, "limit": limit, "offset": offset}
+    where, params = _where(query, with_statuses=True)
     rows = conn.execute(
-        """
-        SELECT * FROM jobs
-        WHERE (:status IS NULL OR status = :status) AND (:type IS NULL OR type = :type)
-        ORDER BY id DESC
-        LIMIT :limit OFFSET :offset
-        """,
-        params,
+        f"SELECT * FROM jobs {where} ORDER BY {_ORDER_BY[query.sort]} LIMIT :limit OFFSET :offset",  # noqa: S608
+        {**params, "limit": limit, "offset": offset},
     )
     jobs = [_to_job(conn, r) for r in rows]
-    total = _count(
-        conn.execute(
-            "SELECT COUNT(*) FROM jobs"
-            " WHERE (:status IS NULL OR status = :status) AND (:type IS NULL OR type = :type)",
-            params,
-        )
-    )
+    total = _count(conn.execute(f"SELECT COUNT(*) FROM jobs {where}", params))  # noqa: S608
     return jobs, total
+
+
+def count_jobs_by_status(conn: sqlite3.Connection, *, query: JobQuery) -> dict[JobStatus, int]:
+    """Count the jobs matching `query` per status, ignoring `query.statuses`.
+
+    Returns:
+        A count for every status, 0 when none match.
+    """
+    where, params = _where(query, with_statuses=False)
+    counts = dict.fromkeys(JobStatus, 0)
+    sql = f"SELECT status, COUNT(*) AS n FROM jobs {where} GROUP BY status"  # noqa: S608
+    for row in conn.execute(sql, params):
+        counts[JobStatus(row["status"])] = row["n"]
+    return counts
+
+
+_ORDER_BY = {
+    JobSort.NEWEST: "id DESC",
+    JobSort.OLDEST: "id ASC",
+    JobSort.PRIORITY: "priority DESC, id DESC",
+    JobSort.RUNNING_LONGEST: "started_at IS NULL, started_at ASC, id DESC",
+}
+
+
+def _like_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _where(query: JobQuery, *, with_statuses: bool) -> tuple[str, dict[str, object]]:
+    clauses: list[str] = []
+    params: dict[str, object] = {}
+    if with_statuses and query.statuses:
+        names = [f":status{i}" for i in range(len(query.statuses))]
+        clauses.append(f"status IN ({', '.join(names)})")
+        params.update(
+            {name[1:]: status.value for name, status in zip(names, query.statuses, strict=True)}
+        )
+    if query.job_type is not None:
+        clauses.append("type = :type")
+        params["type"] = query.job_type
+    if query.worker_id is not None:
+        clauses.append(
+            "EXISTS (SELECT 1 FROM job_attempts a"
+            " WHERE a.job_id = jobs.id AND a.worker_id = :worker)"
+        )
+        params["worker"] = query.worker_id
+    if query.q:
+        like = "description LIKE '%' || :q || '%' ESCAPE '\\'"
+        params["q"] = _like_escape(query.q)
+        if query.q.isascii() and query.q.isdigit() and int(query.q) <= 2**63 - 1:
+            clauses.append(f"(id = :q_id OR {like})")
+            params["q_id"] = int(query.q)
+        else:
+            clauses.append(like)
+    if query.created_from is not None:
+        clauses.append("created_at >= :created_from")
+        params["created_from"] = query.created_from
+    if query.created_to is not None:
+        clauses.append("created_at <= :created_to")
+        params["created_to"] = query.created_to
+    return ("WHERE " + " AND ".join(clauses) if clauses else ""), params
 
 
 _CLAIM_SQL = """
