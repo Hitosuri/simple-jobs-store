@@ -18,7 +18,7 @@ export function formatNumber(n: number): string {
 }
 
 export function formatPercent(ratio: number | null, digits = 1): string {
-  if (ratio === null) return '\u{2014}';
+  if (ratio === null) return '-';
   return `${(ratio * 100).toFixed(digits)}%`;
 }
 

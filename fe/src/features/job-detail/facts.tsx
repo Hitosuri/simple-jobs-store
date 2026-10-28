@@ -22,14 +22,10 @@ export function Facts({ job, attempts, worker, now }: { job: Job; attempts: Atte
 
   return (
     <div className="grid grid-cols-2 gap-2">
-      <Tile
-        label={job.workerId ? 'Worker' : 'Last worker'}
-        value={worker?.name ?? workerId ?? '\u{2014}'}
-        sub={worker?.ip}
-      />
+      <Tile label={job.workerId ? 'Worker' : 'Last worker'} value={worker?.name ?? workerId ?? '-'} sub={worker?.ip} />
       <Tile
         label="Lease"
-        value={leaseLeft === null ? '\u{2014}' : leaseLeft > 0 ? formatDuration(leaseLeft) : 'expired'}
+        value={leaseLeft === null ? '-' : leaseLeft > 0 ? formatDuration(leaseLeft) : 'expired'}
         sub={leaseLeft === null ? undefined : 'remaining'}
         tone={leaseLeft !== null && leaseLeft <= 0 ? 'bad' : 'fg'}
       />
@@ -47,7 +43,7 @@ export function Facts({ job, attempts, worker, now }: { job: Job; attempts: Atte
               : 'overdue'
             : job.deadlineAt
               ? formatDateTime(job.deadlineAt)
-              : '\u{2014}'
+              : '-'
         }
         sub={`priority ${job.priority}`}
         tone={deadlineLeft !== null && deadlineLeft <= 0 ? 'bad' : 'fg'}

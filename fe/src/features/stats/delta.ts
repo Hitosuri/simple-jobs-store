@@ -2,7 +2,7 @@ import type { StatsRange } from '@/api/types';
 
 export type DeltaKind = 'count' | 'rate' | 'ms' | 'ratio';
 
-const sign = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '');
+const sign = (n: number) => (n > 0 ? '+' : n < 0 ? '-' : '');
 
 export function formatDelta(
   current: number | null,

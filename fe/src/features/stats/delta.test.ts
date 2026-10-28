@@ -4,9 +4,9 @@ import { formatDelta } from './delta';
 describe('formatDelta', () => {
   it.each([
     [1284, 1146, 'count', '24h', '+12% vs previous 24h'],
-    [900, 1000, 'count', '1h', '−10% vs previous 1h'],
+    [900, 1000, 'count', '1h', '-10% vs previous 1h'],
     [1000, 1001, 'count', '24h', '0% vs previous 24h'],
-    [0.962, 0.97, 'rate', '24h', '−0.8 pts vs previous 24h'],
+    [0.962, 0.97, 'rate', '24h', '-0.8 pts vs previous 24h'],
     [0.975, 0.96, 'rate', '1h', '+1.5 pts vs previous 1h'],
     [0.9601, 0.96, 'rate', '24h', '0.0 pts vs previous 24h'],
     [0.9599, 0.96, 'ratio', '24h', '0.0 pts vs previous 24h'],

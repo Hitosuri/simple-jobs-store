@@ -172,7 +172,7 @@ function Loaded({ worker, onClose }: { worker: Worker; onClose: () => void }) {
             <div className="flex gap-3">
               <Stat label="Done" value={formatNumber(stats.done)} />
               <Stat label="Success rate" value={formatPercent(stats.successRate)} tone={rateTone(stats.successRate)} />
-              <Stat label="Mean run" value={stats.meanRunMs === null ? '\u{2014}' : formatDuration(stats.meanRunMs)} />
+              <Stat label="Mean run" value={stats.meanRunMs === null ? '-' : formatDuration(stats.meanRunMs)} />
             </div>
           ) : attempts.isError ? (
             <BlockError

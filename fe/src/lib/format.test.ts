@@ -29,7 +29,7 @@ describe('formatPercent', () => {
     expect(formatPercent(0.5, 0)).toBe('50%');
   });
   it('dashes null', () => {
-    expect(formatPercent(null)).toBe('\u{2014}');
+    expect(formatPercent(null)).toBe('-');
   });
 });
 

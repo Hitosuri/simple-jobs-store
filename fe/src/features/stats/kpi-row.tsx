@@ -5,7 +5,7 @@ import { formatDuration, formatNumber, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { formatDelta, type DeltaKind } from './delta';
 
-const dash = '\u{2014}';
+const dash = '-';
 
 export function KpiRow({ kpis, range }: { kpis: Stats['kpis']; range: StatsRange }) {
   const cells: {

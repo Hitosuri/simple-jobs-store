@@ -33,7 +33,7 @@ POST /jobs {type, description, maxAttempt?, maxRunMs?, priority?, reports?}   ->
   never re-run a job. Work that must happen once
   (payments) needs its own idempotency key.
 - **`maxRunMs`** (default 1 day) is the limit **per claim**, not in total. Worst case a job runs
-  `maxAttempt × maxRunMs` plus the `maxAttempt − 1` waits between attempts (1 s, 2 s, 4 s …
+  `maxAttempt × maxRunMs` plus the `maxAttempt - 1` waits between attempts (1 s, 2 s, 4 s …
   capped at 5 min by default): `maxAttempt: 3`, `maxRunMs: 60000` → 180 s + 1 s + 2 s ≈ 3 min.
 - **`priority`** (default 0): higher is claimed first. Ties go to the job that became available
   first. A worker claims one `type` at a time, so priority never compares jobs of different types.

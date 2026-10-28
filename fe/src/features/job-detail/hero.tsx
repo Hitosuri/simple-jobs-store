@@ -55,7 +55,7 @@ export function Hero({ job, now, p95 }: { job: Job; now: number; p95?: number })
           toneClass[slow ? 'warn' : 'fg'],
         )}
       >
-        {ms === null ? '\u{2014}' : formatDuration(ms)}
+        {ms === null ? '-' : formatDuration(ms)}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
         {label}

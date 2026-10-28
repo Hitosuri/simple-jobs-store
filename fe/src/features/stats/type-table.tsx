@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 
 const HEAD = 'text-xs text-muted-foreground';
 const NUM = 'text-right tabular-nums';
-const dash = '\u{2014}';
+const dash = '-';
 const ms = (v: number | null) => (v === null ? dash : formatDuration(v));
 
 export function TypeTable({ rows }: { rows: TypeStats[] }) {
