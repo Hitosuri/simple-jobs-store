@@ -19,12 +19,24 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new ApiError('NETWORK', 'Cannot reach the server', 0);
   }
-  let body: { ok: boolean; data?: T; error?: { code: string; message: string; details?: unknown } };
+  let body: unknown;
   try {
     body = await res.json();
   } catch {
     throw new ApiError('NETWORK', 'Unexpected response from the server', res.status);
   }
-  if (body.ok) return body.data as T;
-  throw new ApiError(body.error!.code, body.error!.message, res.status, body.error!.details);
+  if (typeof body !== 'object' || body === null || typeof (body as { ok?: unknown }).ok !== 'boolean') {
+    throw new ApiError('NETWORK', 'Unexpected response', res.status);
+  }
+  const envelope = body as { ok: boolean; data?: T; error?: { code: string; message: string; details?: unknown } };
+  if (envelope.ok) return envelope.data as T;
+  const { error } = envelope;
+  if (typeof error !== 'object' || error === null) {
+    throw new ApiError('INTERNAL_ERROR', 'Unexpected error response', res.status);
+  }
+  throw new ApiError(error.code, error.message, res.status, error.details);
+}
+
+export function retryNetworkErrors(count: number, err: Error): boolean {
+  return err instanceof ApiError && err.code === 'NETWORK' && count < 3;
 }

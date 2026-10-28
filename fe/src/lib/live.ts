@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { ApiError } from '@/api/client';
 
 export interface LiveStatus {
   state: 'live' | 'stale';
   lastSuccessAt: number | null;
+}
+
+export function isConnectionFailure(error: unknown): boolean {
+  return error instanceof ApiError && (error.code === 'NETWORK' || error.status >= 500);
 }
 
 export function useLiveStatus(): LiveStatus {
@@ -19,7 +24,8 @@ export function useLiveStatus(): LiveStatus {
         undefined,
       );
       const lastSuccessAt = Math.max(0, ...active.map((q) => q.state.dataUpdatedAt)) || null;
-      const state = latest && latest.state.fetchFailureCount > 0 ? 'stale' : 'live';
+      const state =
+        latest && latest.state.fetchFailureCount > 0 && isConnectionFailure(latest.state.error) ? 'stale' : 'live';
       setStatus((prev) =>
         prev.state === state && prev.lastSuccessAt === lastSuccessAt ? prev : { state, lastSuccessAt },
       );

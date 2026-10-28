@@ -9,14 +9,21 @@ const post = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-function useJobMutation<V, R>(fn: (vars: V) => Promise<R>, idOf?: (vars: V) => number) {
+function useJobMutation<V, R>(
+  fn: (vars: V) => Promise<R>,
+  idOf?: (vars: V) => number,
+  removedIds?: (vars: V, data: R) => number[],
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
+      const removed = removedIds?.(vars, data) ?? [];
+      removed.forEach((id) => qc.removeQueries({ queryKey: ['job', id] }));
       const keys: unknown[][] = [['jobs'], ['overview'], ['workers']];
-      if (idOf) keys.push(['job', idOf(vars)]);
-      else keys.push(['job']);
+      if (idOf) {
+        if (!removed.includes(idOf(vars))) keys.push(['job', idOf(vars)]);
+      } else keys.push(['job']);
       return Promise.all(keys.map((queryKey) => qc.invalidateQueries({ queryKey })));
     },
     onError: (err) => toast.error(err.message),
@@ -46,11 +53,15 @@ export const useDeleteJob = () =>
   useJobMutation(
     (id: number) => api<null>(`/jobs/${id}`, { method: 'DELETE' }),
     (id) => id,
+    (id) => [id],
   );
 
 export const useBulk = () =>
-  useJobMutation(({ action, ids, priority }: { action: BulkAction; ids: number[]; priority?: number }) =>
-    api<BulkResult>('/jobs/bulk', post({ action, ids, priority })),
+  useJobMutation(
+    ({ action, ids, priority }: { action: BulkAction; ids: number[]; priority?: number }) =>
+      api<BulkResult>('/jobs/bulk', post({ action, ids, priority })),
+    undefined,
+    ({ action }, result) => (action === 'delete' ? result.done : []),
   );
 
 export function useForgetWorker() {

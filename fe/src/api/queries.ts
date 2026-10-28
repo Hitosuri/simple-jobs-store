@@ -60,7 +60,6 @@ export function useJob(id: number) {
     queryKey: ['job', id],
     queryFn: () => api<JobDetail>(`/jobs/${id}`),
     refetchInterval: POLL_MS,
-    placeholderData: keepPreviousData,
   });
 }
 
