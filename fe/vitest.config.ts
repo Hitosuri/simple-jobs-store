@@ -3,5 +3,5 @@ import viteConfig from './vite.config';
 
 export default defineConfig({
   resolve: viteConfig.resolve,
-  test: { include: ['src/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.{ts,tsx}'] },
 });
