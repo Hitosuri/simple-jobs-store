@@ -1,5 +1,6 @@
 import type { Attempt, Job, Worker } from '@/api/types';
 import { toneClass, type Tone } from '@/features/overview/thresholds';
+import { attemptsShown } from '@/features/jobs/job-cells';
 import { formatDuration } from '@/lib/format';
 import { formatDateTime } from './timeline';
 
@@ -34,7 +35,7 @@ export function Facts({ job, attempts, worker, now }: { job: Job; attempts: Atte
       />
       <Tile
         label="Attempts"
-        value={`${job.attemptsUsed} / ${job.maxAttempt}`}
+        value={`${attemptsShown(job)} /${job.maxAttempt}`}
         sub={unsuccessful > 0 ? `${unsuccessful} unsuccessful` : undefined}
       />
       <Tile

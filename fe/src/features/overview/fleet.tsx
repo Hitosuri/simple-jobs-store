@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { WorkerLoad } from '@/api/types';
+import { groupByMachine } from '@/features/machines/lanes';
 import { Card } from '@/components/ui/card';
 import { formatAgo, formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -130,15 +131,18 @@ export function Fleet({
   const total = live.reduce((n, l) => n + l.worker.concurrentLimit, 0);
   const busy = live.reduce((n, l) => n + l.running.length, 0);
   const ratio = total ? Math.min(busy / total, 1) : 0;
-  const machines = new Map<string, WorkerLoad[]>();
-  for (const l of workers) machines.set(l.worker.ip, [...(machines.get(l.worker.ip) ?? []), l]);
+  const loadOf = new Map(workers.map((l) => [l.worker.id, l]));
+  const machines = groupByMachine(workers.map((l) => l.worker)).map(({ ip, workers: ws }) => ({
+    ip,
+    loads: ws.map((w) => loadOf.get(w.id)!),
+  }));
 
   return (
     <Card className="gap-0 bg-[radial-gradient(120%_80%_at_0%_0%,color-mix(in_srgb,var(--primary)_12%,transparent),transparent_60%)] px-4">
       <div className="mb-1.5 flex justify-between text-xs font-medium text-muted-foreground">
         <span>Fleet</span>
         <span className="tabular-nums">
-          {machines.size} {machines.size === 1 ? 'machine' : 'machines'} · {workers.length}{' '}
+          {machines.length} {machines.length === 1 ? 'machine' : 'machines'} · {workers.length}{' '}
           {workers.length === 1 ? 'worker' : 'workers'}
         </span>
       </div>
@@ -168,7 +172,7 @@ export function Fleet({
             No workers registered. Start a worker to see slots here.
           </p>
         ) : (
-          [...machines].map(([ip, loads]) => <Machine key={ip} ip={ip} loads={loads} now={now} p95={p95} />)
+          machines.map(({ ip, loads }) => <Machine key={ip} ip={ip} loads={loads} now={now} p95={p95} />)
         )}
       </div>
     </Card>

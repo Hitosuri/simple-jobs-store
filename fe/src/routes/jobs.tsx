@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createFileRoute, Outlet, stripSearchParams, useMatch, useNavigate } from '@tanstack/react-router';
 import { useAtom } from 'jotai';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -78,6 +78,13 @@ function JobsScreen() {
   const to = Math.min(from + items.length - 1, total);
   const filtered = !!(search.status || search.type || search.worker || search.q || search.created !== 'all');
 
+  const lastPage = Math.max(1, Math.ceil(total / search.pageSize));
+  const pastEnd = !!jobs.data && items.length === 0 && total > 0 && search.page > lastPage;
+
+  useEffect(() => {
+    if (pastEnd) navigate({ to: '/jobs', search: (prev) => ({ ...prev, page: lastPage }), replace: true });
+  }, [pastEnd, lastPage, navigate]);
+
   let body: React.ReactNode;
   if (!jobs.data) {
     body = jobs.isError ? (
@@ -97,7 +104,7 @@ function JobsScreen() {
         {total > 0 ? (
           <>
             <p>No jobs on this page.</p>
-            <Button variant="outline" onClick={() => setSearch({ page: 1 })}>
+            <Button variant="outline" onClick={() => setSearch({ page: 1 })} className="max-md:min-h-11">
               Go to first page
             </Button>
           </>
@@ -154,6 +161,11 @@ function JobsScreen() {
           workers={workers.data ?? []}
           onChange={setSearch}
         />
+        {jobs.data && jobs.isError && (
+          <Card className="px-4">
+            <BlockError message={jobs.error.message} lastGoodAt={jobs.dataUpdatedAt} onRetry={() => jobs.refetch()} />
+          </Card>
+        )}
         <Card className="gap-0 overflow-hidden py-0">
           {body}
           {jobs.data && total > 0 && (

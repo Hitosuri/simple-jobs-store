@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ConfirmCancel } from '@/features/jobs/confirm-cancel';
 import { ConfirmDelete } from '@/features/jobs/confirm-delete';
 import { can, whyNot } from '@/features/jobs/eligibility';
 
@@ -25,13 +26,13 @@ export function Actions({ job, onDeleted }: { job: Job; onDeleted: () => void })
   const retry = useRetryJob();
   const setPriority = useSetPriority();
   const del = useDeleteJob();
-  const [dialog, setDialog] = useState<'delete' | 'priority' | null>(null);
+  const [dialog, setDialog] = useState<'cancel' | 'delete' | 'priority' | null>(null);
   const [priority, setPriorityText] = useState(String(job.priority));
   const parsed = Number(priority);
   const priorityValid = priority.trim() !== '' && Number.isInteger(parsed) && Math.abs(parsed) < INT32;
 
   const buttons: { action: BulkAction; label: string; Icon: LucideIcon; busy: boolean; run: () => void }[] = [
-    { action: 'cancel', label: 'Cancel', Icon: Ban, busy: cancel.isPending, run: () => cancel.mutate(job.id) },
+    { action: 'cancel', label: 'Cancel', Icon: Ban, busy: cancel.isPending, run: () => setDialog('cancel') },
     {
       action: 'priority',
       label: 'Priority',
@@ -79,7 +80,15 @@ export function Actions({ job, onDeleted }: { job: Job; onDeleted: () => void })
         count={1}
         open={dialog === 'delete'}
         onOpenChange={(o) => !o && setDialog(null)}
-        onConfirm={() => del.mutate(job.id, { onSuccess: onDeleted })}
+        onConfirm={() => void del.mutateAsync(job.id).then(onDeleted, () => {})}
+      />
+
+      <ConfirmCancel
+        count={1}
+        label={`#${job.id}`}
+        open={dialog === 'cancel'}
+        onOpenChange={(o) => !o && setDialog(null)}
+        onConfirm={() => cancel.mutate(job.id)}
       />
 
       <AlertDialog open={dialog === 'priority'} onOpenChange={(o) => !o && setDialog(null)}>

@@ -92,7 +92,18 @@ export function DetailBody({ jobId, onClose }: { jobId: string; onClose: () => v
 
 function LoadedOrState({ id, onClose }: { id: number; onClose: () => void }) {
   const job = useJob(id);
-  if (job.data) return <Loaded data={job.data} onClose={onClose} />;
+  if (job.data) {
+    return (
+      <>
+        {job.isError && (
+          <div className="px-3 pb-3">
+            <BlockError message={job.error.message} lastGoodAt={job.dataUpdatedAt} onRetry={() => job.refetch()} />
+          </div>
+        )}
+        <Loaded data={job.data} onClose={onClose} />
+      </>
+    );
+  }
   if (job.error instanceof ApiError && job.error.code === 'JOB_NOT_FOUND')
     return <NotFound label={String(id)} onClose={onClose} />;
   if (job.isError) {

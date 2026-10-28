@@ -12,9 +12,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { api } from '@/api/client';
 import { useBulk } from '@/api/mutations';
-import type { Finished, Job, Page, TypeQueue } from '@/api/types';
+import type { BulkResult, Finished, Job, Page, TypeQueue } from '@/api/types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { bulkResultMessage } from '@/features/jobs/bulk-result';
+import { formatDelta } from '@/features/stats/delta';
 import { formatDuration, formatNumber, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { failedTone, pendingTone, rateTone, toneClass, type Tone } from './thresholds';
@@ -54,14 +56,13 @@ function RetryAll({ failed }: { failed: number }) {
       ids.push(...res.items.map((j) => j.id));
       if (res.items.length < CHUNK) break;
     }
-    let done = 0;
-    let skipped = 0;
+    const result: BulkResult = { done: [], skipped: [] };
     for (let i = 0; i < ids.length; i += CHUNK) {
       const res = await bulk.mutateAsync({ action: 'retry', ids: ids.slice(i, i + CHUNK) });
-      done += res.done.length;
-      skipped += res.skipped.length;
+      result.done.push(...res.done);
+      result.skipped.push(...res.skipped);
     }
-    toast(`Retried ${done}${skipped ? `, skipped ${skipped}` : ''}`);
+    toast(bulkResultMessage('retry', result));
   }
 
   return (
@@ -114,7 +115,7 @@ export function KpiCard({
   const rawRate = rateOf(finished);
   const rate = rawRate === null ? null : Math.round(rawRate * 1000) / 1000;
   const prev = rateOf(previous);
-  const delta = rawRate !== null && prev !== null ? Math.round((rawRate - prev) * 1000) / 10 : null;
+  const delta = formatDelta(rawRate, prev, 'rate', '24h');
 
   return (
     <Card className="gap-0 py-0">
@@ -123,9 +124,7 @@ export function KpiCard({
           {oldest === null ? 'pending · nothing waiting' : `pending · oldest waits ${formatDuration(oldest)}`}
         </Kpi>
         <Kpi label="Success · 24h" value={formatPercent(rate)} tone={rateTone(rate)}>
-          {delta === null
-            ? `${formatNumber(finished.success + finished.failed)} jobs`
-            : `${delta > 0 ? '+' : delta < 0 ? '-' : ''}${Math.abs(delta).toFixed(1)} pts vs previous 24h`}
+          {delta ?? `${formatNumber(finished.success + finished.failed)} jobs`}
         </Kpi>
         <Kpi label="Failed · 24h" value={formatNumber(finished.failed)} tone={failedTone(finished.failed)}>
           {failedNow > 0 ? <RetryAll failed={failedNow} /> : 'none in 24h'}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Search, SlidersHorizontal } from 'lucide-react';
 import type { Worker } from '@/api/types';
 import { Button } from '@/components/ui/button';
@@ -140,6 +140,7 @@ export function Filters(props: FilterProps) {
   const [text, setText] = useState(search.q ?? '');
   const [sheetOpen, setSheetOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   const active =
     (search.type?.length ?? 0) +
     Number(!!search.worker) +

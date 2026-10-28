@@ -52,9 +52,11 @@ function StatsScreen() {
           <p className="text-sm text-muted-foreground">No jobs finished in this range</p>
         ) : (
           <>
-            <FinishedChart buckets={buckets} range={range} />
+            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+              <FinishedChart buckets={buckets} range={range} />
+              <TopErrors errors={topErrors} />
+            </div>
             <TypeTable rows={byType} />
-            <TopErrors errors={topErrors} />
           </>
         )}
       </>

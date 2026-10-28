@@ -26,17 +26,17 @@ function Overview() {
   const { data, isError, error, dataUpdatedAt, refetch } = useOverview();
   const now = useNow();
 
-  const failure =
-    isError && !data ? (
-      <BlockError message={error.message} lastGoodAt={dataUpdatedAt} onRetry={() => refetch()} />
-    ) : null;
+  const failure = isError ? (
+    <BlockError message={error.message} lastGoodAt={dataUpdatedAt} onRetry={() => refetch()} />
+  ) : null;
 
   return (
     <>
       <PageHeader title="Overview" />
       {data ? (
         <>
-          <AlertBanner alerts={data.alerts} now={now} />
+          {failure && <div className="mb-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">{failure}</div>}
+          <AlertBanner alerts={data.alerts} workers={data.workers} now={now} />
           <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
             <Fleet workers={data.workers} pending={data.counts.pending} p95={data.runP95ByType} now={now} />
             <div className="flex flex-col gap-3">

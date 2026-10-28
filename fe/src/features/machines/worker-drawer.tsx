@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDateTime } from '@/features/job-detail/timeline';
+import { rateTone, toneClass, type Tone } from '@/features/overview/thresholds';
 import { formatAgo, formatDuration, formatNumber, formatPercent } from '@/lib/format';
 import { typeColorVar } from '@/lib/type-color';
 import { useNow } from '@/lib/use-now';
@@ -41,11 +42,11 @@ function Section({ title, aside, children }: { title: string; aside?: string; ch
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, tone = 'fg' }: { label: string; value: string; tone?: Tone }) {
   return (
     <div className="flex-1">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-xl font-semibold tabular-nums">{value}</div>
+      <div className={`text-xl font-semibold tabular-nums ${toneClass[tone]}`}>{value}</div>
     </div>
   );
 }
@@ -170,7 +171,7 @@ function Loaded({ worker, onClose }: { worker: Worker; onClose: () => void }) {
           {attempts.data ? (
             <div className="flex gap-3">
               <Stat label="Done" value={formatNumber(stats.done)} />
-              <Stat label="Success rate" value={formatPercent(stats.successRate)} />
+              <Stat label="Success rate" value={formatPercent(stats.successRate)} tone={rateTone(stats.successRate)} />
               <Stat label="Mean run" value={stats.meanRunMs === null ? '\u{2014}' : formatDuration(stats.meanRunMs)} />
             </div>
           ) : attempts.isError ? (

@@ -15,6 +15,12 @@ export interface ListProps {
   onToggle: (id: number) => void;
 }
 
+export const DASH = '-';
+
+export function attemptsShown(job: Pick<Job, 'attemptsUsed' | 'status'>): number {
+  return job.attemptsUsed + (job.status === 'running' ? 1 : 0);
+}
+
 export function jobProgress(job: Job): number | null {
   const steps = job.progress;
   if (!steps?.length) return null;
@@ -40,7 +46,9 @@ export function TypeChip({ type }: { type: string }) {
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5" style={{ color: typeColorVar(type) }}>
       <span aria-hidden className="h-3 w-1 shrink-0 rounded-[1px] bg-current" />
-      <span className="truncate text-foreground">{type}</span>
+      <span title={type} className="truncate text-foreground">
+        {type}
+      </span>
     </span>
   );
 }
@@ -60,12 +68,12 @@ export function Elapsed({ job, now, p95 }: { job: Job; now: number; p95: Record<
       </span>
     );
   }
-  return <span className="text-muted-foreground">{'-'}</span>;
+  return <span className="text-muted-foreground">{DASH}</span>;
 }
 
 export function Progress({ job }: { job: Job }) {
   const pct = jobProgress(job);
-  if (pct === null) return <span className="text-muted-foreground">{'-'}</span>;
+  if (pct === null) return <span className="text-muted-foreground">{DASH}</span>;
   return (
     <span className="flex items-center gap-2" style={{ color: typeColorVar(job.type) }}>
       <span aria-hidden className="h-1 w-14 overflow-hidden rounded-full bg-border">

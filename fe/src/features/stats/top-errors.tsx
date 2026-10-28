@@ -14,7 +14,9 @@ export function TopErrors({ errors }: { errors: ErrorCount[] }) {
           {errors.map((e) => (
             <li key={`${e.type}\0${e.error}`} className="flex items-start gap-3 py-2 text-[13px]">
               <div className="min-w-0 flex-1">
-                <p className="line-clamp-2 break-words">{e.error}</p>
+                <p title={e.error} className="line-clamp-2 break-words">
+                  {e.error}
+                </p>
                 <div className="mt-0.5 text-xs">
                   <TypeChip type={e.type} />
                 </div>

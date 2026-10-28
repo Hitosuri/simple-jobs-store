@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatNumber } from '@/lib/format';
 import { bulkResultMessage } from './bulk-result';
+import { ConfirmCancel } from './confirm-cancel';
 import { ConfirmDelete } from './confirm-delete';
 import { can, whyNot } from './eligibility';
 
@@ -31,7 +32,7 @@ const ACTIONS: { action: BulkAction; label: string; Icon: LucideIcon }[] = [
 
 export function BulkBar({ jobs, onClear }: { jobs: Job[]; onClear: () => void }) {
   const bulk = useBulk();
-  const [dialog, setDialog] = useState<'delete' | 'priority' | null>(null);
+  const [dialog, setDialog] = useState<'cancel' | 'delete' | 'priority' | null>(null);
   const [priority, setPriority] = useState('0');
   const parsed = Number(priority);
   const priorityValid = priority.trim() !== '' && Number.isInteger(parsed) && Math.abs(parsed) < INT32;
@@ -75,7 +76,7 @@ export function BulkBar({ jobs, onClear }: { jobs: Job[]; onClear: () => void })
                 <Button
                   variant={action === 'delete' ? 'destructive' : 'outline'}
                   disabled={n === 0 || bulk.isPending}
-                  onClick={() => (action === 'delete' || action === 'priority' ? setDialog(action) : run(action))}
+                  onClick={() => (action === 'retry' ? run(action) : setDialog(action))}
                   className="w-full max-md:h-11 max-md:flex-col max-md:gap-0.5 max-md:text-xs"
                 >
                   <Icon />
@@ -87,6 +88,13 @@ export function BulkBar({ jobs, onClear }: { jobs: Job[]; onClear: () => void })
           })}
         </div>
       </div>
+
+      <ConfirmCancel
+        count={eligible('cancel').length}
+        open={dialog === 'cancel'}
+        onOpenChange={(o) => !o && setDialog(null)}
+        onConfirm={() => run('cancel')}
+      />
 
       <ConfirmDelete
         count={eligible('delete').length}

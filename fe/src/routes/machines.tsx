@@ -55,6 +55,15 @@ function MachinesScreen() {
   } else {
     lanesBody = (
       <>
+        {workers.isError && (
+          <div className="mb-2">
+            <BlockError
+              message={workers.error.message}
+              lastGoodAt={workers.dataUpdatedAt}
+              onRetry={() => workers.refetch()}
+            />
+          </div>
+        )}
         {attempts.isError && (
           <div className="mb-2">
             <BlockError

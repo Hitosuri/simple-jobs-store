@@ -3,7 +3,7 @@ import { StatusBadge } from '@/components/status-badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { Elapsed, OpenLink, Progress, TypeChip, workerOf, type ListProps } from './job-cells';
+import { attemptsShown, DASH, Elapsed, OpenLink, Progress, TypeChip, workerOf, type ListProps } from './job-cells';
 
 const LG = 'hidden lg:table-cell';
 const HEAD = 'sticky top-0 z-10 bg-card text-xs text-muted-foreground';
@@ -89,10 +89,10 @@ export function JobsTable({
                       <div className="text-xs text-muted-foreground">{worker.ip}</div>
                     </>
                   ) : (
-                    <span className="text-muted-foreground">{'-'}</span>
+                    <span className="text-muted-foreground">{DASH}</span>
                   )}
                   <div className="text-xs text-muted-foreground tabular-nums lg:hidden">
-                    attempt {job.attempt}/{job.maxAttempt} · priority {job.priority}
+                    attempt {attemptsShown(job)}/{job.maxAttempt} · priority {job.priority}
                   </div>
                 </TableCell>
                 <TableCell className="text-right">
@@ -105,7 +105,7 @@ export function JobsTable({
                   <Progress job={job} />
                 </TableCell>
                 <TableCell className={cn(LG, 'text-right tabular-nums')}>
-                  {job.attempt}/{job.maxAttempt}
+                  {attemptsShown(job)}/{job.maxAttempt}
                 </TableCell>
                 <TableCell className={cn(LG, 'text-right tabular-nums')}>{job.priority}</TableCell>
               </TableRow>

@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { StatusBadge } from '@/components/status-badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import { Elapsed, OpenLink, Progress, TypeChip, workerOf, type ListProps } from './job-cells';
+import { attemptsShown, DASH, Elapsed, OpenLink, Progress, TypeChip, workerOf, type ListProps } from './job-cells';
 
 export function JobCards({
   jobs,
@@ -48,14 +48,16 @@ export function JobCards({
                 <StatusBadge status={job.status} />
               </div>
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span className="truncate">{worker ? `${worker.name}${worker.ip ? ` · ${worker.ip}` : ''}` : '-'}</span>
+                <span className="truncate">
+                  {worker ? `${worker.name}${worker.ip ? ` · ${worker.ip}` : ''}` : DASH}
+                </span>
                 <span className="shrink-0 text-foreground">
                   <Elapsed job={job} now={now} p95={p95} />
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
                 <span>
-                  attempt {job.attempt}/{job.maxAttempt} · priority {job.priority}
+                  attempt {attemptsShown(job)}/{job.maxAttempt} · priority {job.priority}
                 </span>
                 <Progress job={job} />
               </div>

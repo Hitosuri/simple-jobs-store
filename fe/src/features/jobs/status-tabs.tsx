@@ -22,18 +22,16 @@ export function StatusTabs({
   );
   return (
     <Tabs value={value ?? 'all'} onValueChange={(v) => onChange(v === 'all' ? undefined : (v as JobStatus))}>
-      <div className="max-w-full overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
-        <TabsList variant="line" className="h-auto gap-1 pb-2">
-          <TabsTrigger value="all" className="px-3 max-md:min-h-11">
-            {label('all', total)}
+      <TabsList variant="line" className="h-auto w-full flex-wrap justify-start gap-1 pb-2">
+        <TabsTrigger value="all" className="flex-none px-3 max-md:min-h-11">
+          {label('all', total)}
+        </TabsTrigger>
+        {STATUSES.map((s) => (
+          <TabsTrigger key={s} value={s} className="flex-none px-3 max-md:min-h-11">
+            {label(s, counts?.[s])}
           </TabsTrigger>
-          {STATUSES.map((s) => (
-            <TabsTrigger key={s} value={s} className="px-3 max-md:min-h-11">
-              {label(s, counts?.[s])}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </div>
+        ))}
+      </TabsList>
     </Tabs>
   );
 }

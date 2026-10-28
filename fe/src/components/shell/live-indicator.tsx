@@ -15,15 +15,16 @@ export function LiveIndicator({ className }: { className?: string }) {
   }, []);
 
   const live = state === 'live';
-  let text = live ? 'Live' : 'Disconnected';
+  const word = live ? 'Live' : 'Disconnected';
+  let detail = '';
   if (lastSuccessAt !== null) {
-    text += live
+    detail = live
       ? ` · updated ${formatAgo(new Date(lastSuccessAt).toISOString(), now)}`
       : ` · data from ${clock.format(lastSuccessAt)}`;
   }
 
   return (
-    <div role="status" className={cn('flex items-center gap-2 text-xs text-muted-foreground', className)}>
+    <div className={cn('flex items-center gap-2 text-xs text-muted-foreground', className)}>
       <span
         aria-hidden
         className={cn(
@@ -31,7 +32,13 @@ export function LiveIndicator({ className }: { className?: string }) {
           live ? 'bg-ok shadow-[0_0_0_3px_color-mix(in_srgb,var(--ok)_20%,transparent)]' : 'bg-bad',
         )}
       />
-      {text}
+      <span role="status" className="sr-only">
+        {word}
+      </span>
+      <span aria-hidden>
+        {word}
+        {detail}
+      </span>
     </div>
   );
 }

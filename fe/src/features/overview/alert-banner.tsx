@@ -1,24 +1,26 @@
 import { Link } from '@tanstack/react-router';
-import type { Alert } from '@/api/types';
+import type { Alert, WorkerLoad } from '@/api/types';
 import { formatAgo } from '@/lib/format';
 
 const MAX_SHOWN = 3;
 
-function AlertRow({ alert, now }: { alert: Alert; now: number }) {
+const VIEW = 'ml-auto inline-flex items-center font-semibold max-md:min-h-11';
+
+function AlertRow({ alert, now, workerName }: { alert: Alert; now: number; workerName: string }) {
   const when = formatAgo(alert.at, now);
   return (
     <div className="flex items-center gap-2.5">
       <span aria-hidden className="size-2 shrink-0 rounded-full bg-bad" />
       <span className="min-w-0">
-        <b className="font-semibold">{alert.workerId}</b>{' '}
-        {alert.kind === 'worker_lost' ? `lost its lease ${when}` : `had job ${alert.jobId} expire ${when}`}
+        <b className="font-semibold">{workerName}</b>{' '}
+        {alert.kind === 'worker_lost' ? `lost its lease ${when}` : `had job #${alert.jobId} expire ${when}`}
       </span>
       {alert.kind === 'worker_lost' || alert.jobId === null ? (
-        <Link to="/machines/$workerId" params={{ workerId: alert.workerId }} className="ml-auto font-semibold">
+        <Link to="/machines/$workerId" params={{ workerId: alert.workerId }} className={VIEW}>
           View
         </Link>
       ) : (
-        <Link to="/jobs/$jobId" params={{ jobId: String(alert.jobId) }} className="ml-auto font-semibold">
+        <Link to="/jobs/$jobId" params={{ jobId: String(alert.jobId) }} className={VIEW}>
           View
         </Link>
       )}
@@ -26,15 +28,18 @@ function AlertRow({ alert, now }: { alert: Alert; now: number }) {
   );
 }
 
-export function AlertBanner({ alerts, now }: { alerts: Alert[]; now: number }) {
+export function AlertBanner({ alerts, workers, now }: { alerts: Alert[]; workers: WorkerLoad[]; now: number }) {
   if (alerts.length === 0) return null;
+  const names = new Map(workers.map((l) => [l.worker.id, l.worker.name]));
   return (
-    <div
-      role="alert"
-      className="mb-3 flex flex-col gap-1.5 rounded-md border border-bad/35 bg-[linear-gradient(90deg,color-mix(in_srgb,var(--bad)_15%,transparent),color-mix(in_srgb,var(--bad)_3%,transparent))] px-3 py-2 text-[13px]"
-    >
+    <div className="mb-3 flex flex-col gap-1.5 rounded-md border border-bad/35 bg-[linear-gradient(90deg,color-mix(in_srgb,var(--bad)_15%,transparent),color-mix(in_srgb,var(--bad)_3%,transparent))] px-3 py-2 text-[13px]">
       {alerts.slice(0, MAX_SHOWN).map((a, i) => (
-        <AlertRow key={`${a.kind}-${a.workerId}-${a.jobId}-${a.at}-${i}`} alert={a} now={now} />
+        <AlertRow
+          key={`${a.kind}-${a.workerId}-${a.jobId}-${a.at}-${i}`}
+          alert={a}
+          now={now}
+          workerName={names.get(a.workerId) ?? a.workerId}
+        />
       ))}
       {alerts.length > MAX_SHOWN && (
         <span className="text-xs text-muted-foreground">+{alerts.length - MAX_SHOWN} more</span>
