@@ -1,7 +1,7 @@
 """Job routes."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Path, Query, status
 
@@ -9,6 +9,9 @@ import store
 from api.deps import ConnDep, NowDep, PageDep, SettingsDep
 from api.envelope import ApiOk
 from api.schemas import (
+    BulkBody,
+    BulkOut,
+    BulkSkip,
     ClaimBody,
     ClaimOut,
     FinishBody,
@@ -22,7 +25,7 @@ from api.schemas import (
     LeaseBody,
     Page,
 )
-from domain import FailureReport, JobId, JobStatus, SuccessReport
+from domain import FailureReport, JobId, JobStatus, StoreError, SuccessReport
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +90,32 @@ def claim_job(
         return ApiOk[ClaimOut | None](data=None)
     logger.info("job %s claimed by worker %s", claim.job.id, body.worker_id)
     return ApiOk[ClaimOut | None](data=ClaimOut.build(claim, now))
+
+
+@router.post("/bulk")
+def bulk_jobs(body: BulkBody, conn: ConnDep, now: NowDep) -> ApiOk[BulkOut]:
+    """Apply one action to many jobs; each id is its own transaction and failures are skipped."""
+    done: list[JobId] = []
+    skipped: list[BulkSkip] = []
+    for raw_id in dict.fromkeys(body.ids):
+        job_id = JobId(raw_id)
+        try:
+            match body.action:
+                case "cancel":
+                    store.cancel_job(conn, now=now, job_id=job_id)
+                case "retry":
+                    store.retry_job(conn, now=now, job_id=job_id)
+                case "delete":
+                    store.delete_job(conn, job_id=job_id)
+                case "priority":
+                    store.set_priority(
+                        conn, now=now, job_id=job_id, priority=cast("int", body.priority)
+                    )
+        except StoreError as e:
+            skipped.append(BulkSkip(id=job_id, code=e.code))
+        else:
+            done.append(job_id)
+    return ApiOk[BulkOut](data=BulkOut(done=done, skipped=skipped))
 
 
 @router.get("/{job_id}")

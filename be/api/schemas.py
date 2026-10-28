@@ -5,7 +5,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Generic, Literal, Self, TypeVar
 
 from fastapi import Body
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 from domain import (
@@ -14,6 +22,7 @@ from domain import (
     AttemptOutcome,
     Claim,
     EpochMs,
+    ErrorCode,
     Job,
     JobId,
     JobStatus,
@@ -136,6 +145,35 @@ class JobPatchBody(CamelModel):
     """Body of `PATCH /api/jobs/{id}`."""
 
     priority: int = Field(ge=-(2**31), le=2**31 - 1)
+
+
+class BulkBody(CamelModel):
+    """Body of `POST /api/jobs/bulk`; `priority` is required for the `priority` action only."""
+
+    action: Literal["cancel", "retry", "delete", "priority"]
+    ids: list[int] = Field(min_length=1, max_length=1000)
+    priority: int | None = Field(default=None, ge=-(2**31), le=2**31 - 1)
+
+    @model_validator(mode="after")
+    def _priority_iff_action(self) -> Self:
+        if (self.action == "priority") != (self.priority is not None):
+            msg = "priority is required for, and only for, the priority action"
+            raise ValueError(msg)
+        return self
+
+
+class BulkSkip(CamelModel):
+    """An id a bulk action did not apply to, with the reason."""
+
+    id: JobId
+    code: ErrorCode
+
+
+class BulkOut(CamelModel):
+    """`POST /api/jobs/bulk` response."""
+
+    done: list[JobId]
+    skipped: list[BulkSkip]
 
 
 class ClaimBody(CamelModel):

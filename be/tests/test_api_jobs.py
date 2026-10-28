@@ -501,3 +501,53 @@ def test_api_delete_finished_job_then_404_and_409_when_unfinished(client: TestCl
     missing = client.get(f"/api/jobs/{job_id}")
     assert missing.status_code == 404
     assert error_code(missing) == "JOB_NOT_FOUND"
+
+
+def test_api_bulk_retry_reports_skipped_ids_with_codes(client: TestClient) -> None:
+    register(client)
+    failed_id = create(client, maxAttempt=1)["id"]
+    failed = claim(client)
+    client.post(
+        f"/api/jobs/{failed_id}/finish",
+        json={**lease_body(failed), "status": "failed", "error": "boom"},
+    )
+    running_id = create(client)["id"]
+    claim(client)
+    resp = client.post(
+        "/api/jobs/bulk",
+        json={"action": "retry", "ids": [failed_id, failed_id, 999999, running_id]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"] == {
+        "done": [failed_id],
+        "skipped": [
+            {"id": 999999, "code": "JOB_NOT_FOUND"},
+            {"id": running_id, "code": "JOB_NOT_RETRYABLE"},
+        ],
+    }
+
+
+def test_api_bulk_priority_cancel_delete(client: TestClient) -> None:
+    ids = [create(client)["id"] for _ in range(2)]
+    resp = client.post("/api/jobs/bulk", json={"action": "priority", "ids": ids, "priority": 7})
+    assert resp.json()["data"] == {"done": ids, "skipped": []}
+    assert client.get(f"/api/jobs/{ids[0]}").json()["data"]["job"]["priority"] == 7
+    resp = client.post("/api/jobs/bulk", json={"action": "cancel", "ids": ids})
+    assert resp.json()["data"] == {"done": ids, "skipped": []}
+    for job_id in ids:
+        assert client.get(f"/api/jobs/{job_id}").json()["data"]["job"]["status"] == "cancelled"
+    resp = client.post("/api/jobs/bulk", json={"action": "delete", "ids": ids})
+    assert resp.json()["data"] == {"done": ids, "skipped": []}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"action": "priority", "ids": [1]},
+        {"action": "cancel", "ids": list(range(1, 1002))},
+        {"action": "cancel", "ids": []},
+        {"action": "nope", "ids": [1]},
+    ],
+)
+def test_api_bulk_rejects_invalid_body(client: TestClient, body: dict[str, Any]) -> None:
+    assert client.post("/api/jobs/bulk", json=body).status_code == 422
