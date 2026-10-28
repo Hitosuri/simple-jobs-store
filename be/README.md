@@ -102,12 +102,37 @@ The cleaner deletes `success` / `failed` / `cancelled` jobs whose `finishedAt` i
 | Call | Body / query | `data` |
 |---|---|---|
 | `POST /api/jobs` | `type` (non-empty), `description` (JSON), `maxAttempt?` (1..100, default 3), `maxRunMs?` (1..86 400 000, default 1 day), `priority?` (int32, default 0), `reports?` (1..10 methods, §8) | job, HTTP 201 |
-| `GET /api/jobs` | `status?`, `type?`, `page?` (≥ 1, default 1), `pageSize?` (1..1000, default 100) | page of jobs, newest first |
+| `GET /api/jobs` | `status?` and `type?` (both repeatable), `worker?` (repeatable), `q?` (job id, or literal substring of the description), `createdFrom?` / `createdTo?` (ISO), `sort?` (`newest` default, `oldest`, `priority`, `running_longest`), `page?` (≥ 1, default 1), `pageSize?` (1..1000, default 100) | page of jobs |
+| `GET /api/jobs/counts` | same filters as `GET /api/jobs`, except `status` is ignored | `{pending, running, success, failed, cancelled}` |
 | `GET /api/jobs/{id}` | - | `{job, attempts}`, attempts oldest first |
 | `POST /api/jobs/{id}/cancel` | - | job |
-| `GET /api/workers` | - | workers |
+| `POST /api/jobs/{id}/retry` | - | job (§7.1) |
+| `PATCH /api/jobs/{id}` | `priority` (int32) | job (§7.1) |
+| `DELETE /api/jobs/{id}` | - | `null` (§7.1) |
+| `POST /api/jobs/bulk` | `action` (`cancel`, `retry`, `delete`, `priority`), `ids` (1..1000, each 1..2^63-1), `priority` (only for `priority`) | `{done: [id], skipped: [{id, code}]}` |
+| `GET /api/workers` | `includeOffline?` (default `false`) | workers; by default hides those whose lease expired over 24 h ago |
+| `DELETE /api/workers/{id}` | - | `null` (§7.1) |
+| `GET /api/attempts` | `from`, `to` (ISO; `to` after `from` by at most 24 h), `worker?` | attempts overlapping the window |
+| `GET /api/overview` | - | counts, worker load, pending per type, finished in the last 24 h and the 24 h before, throughput buckets, alerts, p95 run time per type |
+| `GET /api/stats` | `range` (`1h`, `24h`, `7d`) | KPIs with previous-window values, finished buckets, per-type figures, top errors |
 
 Worker calls: [`WORKER.md`](../WORKER.md) §3.
+
+### 7.1 Operator actions
+
+Used by the control room. Failures use the usual error envelope.
+
+- **Retry** (`failed` or `cancelled` only, else `JOB_NOT_RETRYABLE` 409): the job goes back to
+  `pending` under the same id. `requeuedAt` is set, and the `maxAttempt` budget counts only attempts
+  started after it (`attemptsUsed`); older attempts stay in the history. `deadlineAt` is cleared, so
+  the worker of the old attempt cannot reclaim it. `lastWorkerId` is the worker of the latest attempt. Report fields are reset as for a new job: the
+  provider gets a new report when the job finishes again.
+- **Priority** (`pending` only, else `JOB_NOT_PENDING` 409): changes `priority`.
+- **Delete** (finished jobs only, else `JOB_NOT_FINISHED` 409): removes the job and its attempts.
+- **Bulk:** runs one action per id. Ids it could not apply to come back in `skipped` with the error
+  code the single call would give (e.g. `JOB_NOT_FOUND`); the others are in `done`.
+- **Forget worker** (`DELETE /api/workers/{id}`): only an offline worker that holds no job.
+  `WORKER_CONNECTED` 409 while its lease is live, `WORKER_BUSY` 409 while any job still references it. Its attempt history stays.
 
 Objects:
 - **worker:** `id, name, ip, concurrentLimit, connectedAt, lastSeenAt, leaseUntil, leaseMsRemaining, connected`.

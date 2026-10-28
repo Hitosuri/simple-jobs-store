@@ -40,6 +40,9 @@ POST /jobs {type, description, maxAttempt?, maxRunMs?, priority?, reports?}   ->
 - **Cancel** works on `pending` and `running` jobs. A running worker only stops at its next
   heartbeat (~10 s), so side effects can still happen after cancel returns. Cancelled jobs get
   no callback.
+- **An operator may requeue.** From the control room an operator can requeue a `failed` or
+  `cancelled` job. It then runs again under the same id and, when it finishes, you get a new report
+  for that id, even if you had cancelled it or already received `failed`.
 - **Keep results within 7 days.** Finished jobs (and their attempts) are deleted
   `JOBS_STORE_RETENTION_MS` after `finishedAt`; later reads return `JOB_NOT_FOUND`. `pending` and
   `running` jobs are never deleted.
@@ -67,7 +70,7 @@ Branch on `ok` and `error.code`, not on HTTP status or `message`.
 |---|---|---|
 | `POST /jobs` | `type` (non-empty), `description` (JSON, required, may be `null`), `maxAttempt?` (1..100), `maxRunMs?` (1..86 400 000), `priority?` (int32), `reports?` (1..10 methods, §4) | job, HTTP 201 |
 | `GET /jobs/{jobId}` | - | `{job, attempts}`, attempts oldest first |
-| `GET /jobs` | `status?`, `type?`, `page?` (≥ 1, default 1), `pageSize?` (1..1000, default 100) | `{items, page, pageSize, total}`, items newest first |
+| `GET /jobs` | `status?`, `type?`, `worker?` (all three repeatable), `q?` (job id, or literal substring of the description), `createdFrom?` / `createdTo?` (ISO), `sort?` (`newest` default, `oldest`, `priority`, `running_longest`), `page?` (≥ 1, default 1), `pageSize?` (1..1000, default 100) | `{items, page, pageSize, total}`, items in `sort` order |
 | `POST /jobs/{jobId}/cancel` | - | job |
 
 Create a job:
@@ -90,6 +93,7 @@ curl -X POST http://127.0.0.1:8000/api/jobs -H "Content-Type: application/json" 
 | `result` | Worker's result on `success`, else `null` |
 | `error` / `errorDetail` | Worker's own error when it reported `failed`. A worker that crashes, is killed or loses the network reports nothing: `error` is `lease_expired`. An attempt that ran past `maxRunMs`: `deadline_exceeded`. Detail `null` for both. Cleared on `success` |
 | `attempt` / `maxAttempt` | Claims so far (releases included) / attempt limit |
+| `requeuedAt` / `attemptsUsed` | `requeuedAt` is `null` unless an operator requeued the job. `attemptsUsed` is what counts against `maxAttempt`: attempts since `requeuedAt` |
 | `availableAt` | While `pending`: when the job can be claimed (later than now during retry backoff) |
 | `startedAt` / `finishedAt` | Latest claim / when it reached `success`, `failed` or `cancelled` |
 | `reports`, `reportStatus`, `reportRound`, `reportCursor`, `reportNextAt`, `reportError` | Callback delivery, §4 |
@@ -161,6 +165,10 @@ If B works, it stops at the second send (~10 s): `reportStatus` = `success`.
 There is no endpoint to resend. If `reportStatus` is `failed`, read the job with
 `GET /jobs/{jobId}` instead (before retention deletes it). Don't create the job again to get a
 new callback: that runs the work again.
+
+An operator can requeue a `failed` or `cancelled` job. It then runs again under the same id, and
+when it finishes you get a new report for that id (`reportStatus` is reset), even if you had
+cancelled it or already received `failed`.
 
 ## 5. Writing the callback endpoint
 

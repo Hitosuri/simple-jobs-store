@@ -27,6 +27,12 @@ def access_record(method: str, path: str, status: int) -> logging.LogRecord:
         ("POST", "/api/workers/0e187f74-7a23-4960-9469-3dbc586b736b/heartbeat"),
         ("GET", "/api/workers"),
         ("GET", "/api/workers?limit=5"),
+        ("GET", "/api/workers?includeOffline=true"),
+        ("GET", "/api/overview"),
+        ("GET", "/api/jobs/counts?status=failed"),
+        ("GET", "/api/stats?range=1h"),
+        ("GET", "/api/attempts?from=2026-01-01T00:00:00Z&to=2026-01-01T01:00:00Z"),
+        ("GET", "/api/jobs?status=failed&sort=oldest"),
     ],
 )
 def test_successful_polling_is_dropped(method: str, path: str) -> None:
@@ -40,6 +46,10 @@ def test_successful_polling_is_dropped(method: str, path: str) -> None:
         ("POST", "/api/jobs/42/heartbeat", 409),
         ("POST", "/api/jobs", 201),
         ("POST", "/api/jobs/42/finish", 200),
+        ("GET", "/api/stats?range=bad", 422),
+        ("GET", "/api/attempts?from=x", 422),
+        ("GET", "/api/jobs?status=bad", 422),
+        ("GET", "/api/jobs/42", 200),
         ("GET", "/api/workers/w1", 200),
         ("PUT", "/api/workers/w1", 200),
     ],

@@ -24,12 +24,13 @@ from domain import Clock, Settings
 logger = logging.getLogger(__name__)
 
 _POLLING = re.compile(
-    r"POST /api/jobs/claim|POST /api/(jobs|workers)/[^/]+/heartbeat|GET /api/workers"
+    r"POST /api/jobs/claim|POST /api/(jobs|workers)/[^/]+/heartbeat"
+    r"|GET /api/(overview|stats|attempts|jobs(/counts)?|workers)"
 )
 
 
 class PollingAccessFilter(logging.Filter):
-    """Drop successful claim, heartbeat and worker-list polling from uvicorn's access log."""
+    """Drop successful claim, heartbeat and polled read requests from uvicorn's access log."""
 
     @override
     def filter(self, record: logging.LogRecord) -> bool:

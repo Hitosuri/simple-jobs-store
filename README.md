@@ -92,7 +92,7 @@ All routes are under `/api` and return `{"ok": true, "data": ...}` or
 | Method | Path                                | Used by  | Purpose                                                         |
 | ------ | ----------------------------------- | -------- | --------------------------------------------------------------- |
 | POST   | `/api/jobs`                         | provider | Submit `{type, description, maxAttempt?, maxRunMs?, priority?, reports?}` |
-| GET    | `/api/jobs?status=&type=&page=&pageSize=` | anyone | List jobs, newest first, paginated                          |
+| GET    | `/api/jobs?status=&type=&page=&pageSize=` | anyone | List jobs, newest first, paginated (more filters and sorts: `be/README.md` §7) |
 | GET    | `/api/jobs/{id}`                    | anyone   | Job + attempt history                                           |
 | POST   | `/api/jobs/{id}/cancel`             | provider | Cancel a pending or running job                                 |
 | PUT    | `/api/workers/{workerId}`           | worker   | Register                                                        |
@@ -103,6 +103,8 @@ All routes are under `/api` and return `{"ok": true, "data": ...}` or
 | POST   | `/api/jobs/{id}/finish`             | worker   | Report success or failure                                       |
 | POST   | `/api/jobs/{id}/release`            | worker   | Give a job back without using an attempt                        |
 
+
+Operator endpoints (retry, priority, delete, bulk actions, forget worker, counts, overview, stats, attempts window): [be/README.md](be/README.md) §7.
 
 Worker-side details (lease rules, error codes, retries, reference code): [WORKER.md](WORKER.md).
 
