@@ -151,7 +151,7 @@ class BulkBody(CamelModel):
     """Body of `POST /api/jobs/bulk`; `priority` is required for the `priority` action only."""
 
     action: Literal["cancel", "retry", "delete", "priority"]
-    ids: list[int] = Field(min_length=1, max_length=1000)
+    ids: list[Annotated[int, Field(ge=1, le=2**63 - 1)]] = Field(min_length=1, max_length=1000)
     priority: int | None = Field(default=None, ge=-(2**31), le=2**31 - 1)
 
     @model_validator(mode="after")

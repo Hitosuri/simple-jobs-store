@@ -546,6 +546,8 @@ def test_api_bulk_priority_cancel_delete(client: TestClient) -> None:
         {"action": "priority", "ids": [1]},
         {"action": "cancel", "ids": list(range(1, 1002))},
         {"action": "cancel", "ids": []},
+        {"action": "cancel", "ids": [2**63]},
+        {"action": "cancel", "ids": [0]},
         {"action": "nope", "ids": [1]},
     ],
 )
