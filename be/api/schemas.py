@@ -132,6 +132,12 @@ class JobCreateBody(CamelModel):
     reports: list[ReportMethod] | None = Field(default=None, min_length=1, max_length=10)
 
 
+class JobPatchBody(CamelModel):
+    """Body of `PATCH /api/jobs/{id}`."""
+
+    priority: int = Field(ge=-(2**31), le=2**31 - 1)
+
+
 class ClaimBody(CamelModel):
     """Body of `POST /api/jobs/claim`."""
 

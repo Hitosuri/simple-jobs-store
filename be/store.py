@@ -18,7 +18,9 @@ from domain import (
     Job,
     JobAlreadyFinishedError,
     JobId,
+    JobNotFinishedError,
     JobNotFoundError,
+    JobNotPendingError,
     JobNotRetryableError,
     JobStatus,
     Lease,
@@ -848,6 +850,51 @@ def retry_job(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -> Job:
             {"now": now, "id": job_id},
         )
         return _load_job(conn, job_id)
+
+
+def set_priority(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId, priority: int) -> Job:
+    """Change the priority of a pending job.
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        job_id: Job to change.
+        priority: New priority.
+
+    Returns:
+        The updated job.
+
+    Raises:
+        JobNotFoundError: No such job.
+        JobNotPendingError: Job is not pending.
+    """
+    with transaction(conn):
+        job = _load_job(conn, job_id)
+        if job.status is not JobStatus.PENDING:
+            raise JobNotPendingError
+        conn.execute(
+            "UPDATE jobs SET priority = :priority, updated_at = :now WHERE id = :id",
+            {"priority": priority, "now": now, "id": job_id},
+        )
+        return _load_job(conn, job_id)
+
+
+def delete_job(conn: sqlite3.Connection, *, job_id: JobId) -> None:
+    """Delete a finished job; its attempts are removed with it.
+
+    Args:
+        conn: Store connection.
+        job_id: Job to delete.
+
+    Raises:
+        JobNotFoundError: No such job.
+        JobNotFinishedError: Job is not success, failed or cancelled.
+    """
+    with transaction(conn):
+        job = _load_job(conn, job_id)
+        if job.status not in TERMINAL_STATUSES:
+            raise JobNotFinishedError
+        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
 
 
 def cleanup(conn: sqlite3.Connection, *, now: EpochMs, settings: Settings) -> None:

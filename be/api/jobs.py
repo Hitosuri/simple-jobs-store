@@ -18,6 +18,7 @@ from api.schemas import (
     JobHeartbeatBody,
     JobLeaseOut,
     JobOut,
+    JobPatchBody,
     LeaseBody,
     Page,
 )
@@ -93,6 +94,20 @@ def get_job(job_id: JobIdPath, conn: ConnDep) -> ApiOk[JobDetailOut]:
     """Return a job with its attempts."""
     job, attempts = store.get_job(conn, job_id=JobId(job_id))
     return ApiOk[JobDetailOut](data=JobDetailOut.build(job, attempts))
+
+
+@router.patch("/{job_id}")
+def patch_job(job_id: JobIdPath, body: JobPatchBody, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
+    """Change the priority of a pending job."""
+    job = store.set_priority(conn, now=now, job_id=JobId(job_id), priority=body.priority)
+    return ApiOk[JobOut](data=JobOut.build(job))
+
+
+@router.delete("/{job_id}")
+def delete_job(job_id: JobIdPath, conn: ConnDep) -> ApiOk[None]:
+    """Delete a finished job and its attempts."""
+    store.delete_job(conn, job_id=JobId(job_id))
+    return ApiOk[None](data=None)
 
 
 @router.post("/{job_id}/cancel")

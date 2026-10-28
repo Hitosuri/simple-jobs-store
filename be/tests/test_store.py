@@ -17,7 +17,9 @@ from domain import (
     Job,
     JobAlreadyFinishedError,
     JobId,
+    JobNotFinishedError,
     JobNotFoundError,
+    JobNotPendingError,
     JobNotRetryableError,
     JobStatus,
     Lease,
@@ -1207,3 +1209,58 @@ def test_old_worker_cannot_reclaim_a_requeued_job(
     with pytest.raises(LeaseRejectedError):
         heartbeat(conn, clock, settings, claimed)
     assert store.get_job(conn, job_id=claimed.job.id)[0].status is JobStatus.PENDING
+
+
+def test_set_priority_updates_pending_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = add_job(conn, clock, settings)
+    clock.advance(1_000)
+    updated = store.set_priority(conn, now=clock(), job_id=job.id, priority=7)
+    assert updated.priority == 7
+    assert updated.updated_at == clock.now
+
+
+def test_set_priority_rejects_running_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    job = add_job(conn, clock, settings)
+    claim(conn, clock, settings, wid)
+    with pytest.raises(JobNotPendingError):
+        store.set_priority(conn, now=clock(), job_id=job.id, priority=7)
+
+
+def test_set_priority_unknown_job_raises(conn: sqlite3.Connection, clock: FakeClock) -> None:
+    with pytest.raises(JobNotFoundError):
+        store.set_priority(conn, now=clock(), job_id=JobId(999), priority=1)
+
+
+def test_delete_finished_job_removes_job_and_attempts(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    job = add_job(conn, clock, settings)
+    finish(conn, clock, settings, claim(conn, clock, settings, wid), SuccessReport(result=None))
+    store.delete_job(conn, job_id=job.id)
+    with pytest.raises(JobNotFoundError):
+        store.get_job(conn, job_id=job.id)
+    rows = conn.execute("SELECT COUNT(*) FROM job_attempts WHERE job_id = ?", (job.id,))
+    assert rows.fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("state", ["pending", "running"])
+def test_delete_rejects_unfinished_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, state: str
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    job = add_job(conn, clock, settings)
+    if state == "running":
+        claim(conn, clock, settings, wid)
+    with pytest.raises(JobNotFinishedError):
+        store.delete_job(conn, job_id=job.id)
+
+
+def test_delete_unknown_job_raises(conn: sqlite3.Connection) -> None:
+    with pytest.raises(JobNotFoundError):
+        store.delete_job(conn, job_id=JobId(999))

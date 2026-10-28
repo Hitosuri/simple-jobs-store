@@ -471,3 +471,33 @@ def test_api_retry_returns_job_and_409_code(client: TestClient) -> None:
     again = client.post(f"/api/jobs/{job_id}/retry")
     assert again.status_code == 409
     assert error_code(again) == "JOB_NOT_RETRYABLE"
+
+
+def test_api_patch_priority_and_409_when_not_pending(client: TestClient) -> None:
+    job_id = create(client)["id"]
+    patched = client.patch(f"/api/jobs/{job_id}", json={"priority": 5})
+    assert patched.status_code == 200
+    assert patched.json()["data"]["priority"] == 5
+    client.post(f"/api/jobs/{job_id}/cancel")
+    again = client.patch(f"/api/jobs/{job_id}", json={"priority": 6})
+    assert again.status_code == 409
+    assert error_code(again) == "JOB_NOT_PENDING"
+
+
+def test_api_patch_priority_out_of_range_is_422(client: TestClient) -> None:
+    job_id = create(client)["id"]
+    assert client.patch(f"/api/jobs/{job_id}", json={"priority": 2**31}).status_code == 422
+
+
+def test_api_delete_finished_job_then_404_and_409_when_unfinished(client: TestClient) -> None:
+    job_id = create(client)["id"]
+    blocked = client.delete(f"/api/jobs/{job_id}")
+    assert blocked.status_code == 409
+    assert error_code(blocked) == "JOB_NOT_FINISHED"
+    client.post(f"/api/jobs/{job_id}/cancel")
+    deleted = client.delete(f"/api/jobs/{job_id}")
+    assert deleted.status_code == 200
+    assert deleted.json()["data"] is None
+    missing = client.get(f"/api/jobs/{job_id}")
+    assert missing.status_code == 404
+    assert error_code(missing) == "JOB_NOT_FOUND"

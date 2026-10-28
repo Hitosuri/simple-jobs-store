@@ -67,6 +67,8 @@ class ErrorCode(StrEnum):
     LEASE_REJECTED = "LEASE_REJECTED"
     JOB_ALREADY_FINISHED = "JOB_ALREADY_FINISHED"
     JOB_NOT_RETRYABLE = "JOB_NOT_RETRYABLE"
+    JOB_NOT_PENDING = "JOB_NOT_PENDING"
+    JOB_NOT_FINISHED = "JOB_NOT_FINISHED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -283,6 +285,20 @@ class JobNotRetryableError(StoreError):
 
     code = ErrorCode.JOB_NOT_RETRYABLE
     message = "job is not failed or cancelled"
+
+
+class JobNotPendingError(StoreError):
+    """Only pending jobs can change priority."""
+
+    code = ErrorCode.JOB_NOT_PENDING
+    message = "job is not pending"
+
+
+class JobNotFinishedError(StoreError):
+    """Only success, failed or cancelled jobs can be deleted."""
+
+    code = ErrorCode.JOB_NOT_FINISHED
+    message = "job is not finished"
 
 
 @dataclass(frozen=True, slots=True)
