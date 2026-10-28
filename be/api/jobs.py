@@ -102,6 +102,13 @@ def cancel_job(job_id: JobIdPath, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
     return ApiOk[JobOut](data=JobOut.build(job))
 
 
+@router.post("/{job_id}/retry")
+def retry_job(job_id: JobIdPath, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
+    """Requeue a failed or cancelled job in place."""
+    job = store.retry_job(conn, now=now, job_id=JobId(job_id))
+    return ApiOk[JobOut](data=JobOut.build(job))
+
+
 @router.post("/{job_id}/heartbeat")
 def heartbeat_job(
     job_id: JobIdPath, body: JobHeartbeatBody, conn: ConnDep, now: NowDep, settings: SettingsDep

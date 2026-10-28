@@ -19,6 +19,7 @@ from domain import (
     JobAlreadyFinishedError,
     JobId,
     JobNotFoundError,
+    JobNotRetryableError,
     JobStatus,
     Lease,
     LeaseRejectedError,
@@ -806,6 +807,42 @@ def cancel_job(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -> Job:
             """
             UPDATE jobs SET status = 'cancelled', worker_id = NULL, lease_token = NULL,
                             lease_until = NULL, finished_at = :now, updated_at = :now
+            WHERE id = :id
+            """,
+            {"now": now, "id": job_id},
+        )
+        return _load_job(conn, job_id)
+
+
+def retry_job(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -> Job:
+    """Requeue a failed or cancelled job in place with a fresh attempt budget.
+
+    The job keeps its id and attempt history; the budget is counted from now. Result,
+    error, deadline, progress and report state are reset like a fresh job.
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        job_id: Job to retry.
+
+    Returns:
+        The pending job.
+
+    Raises:
+        JobNotFoundError: No such job.
+        JobNotRetryableError: Job is not failed or cancelled.
+    """
+    with transaction(conn):
+        job = _load_job(conn, job_id)
+        if job.status not in {JobStatus.FAILED, JobStatus.CANCELLED}:
+            raise JobNotRetryableError
+        conn.execute(
+            """
+            UPDATE jobs SET status = 'pending', available_at = :now, requeued_at = :now,
+                            updated_at = :now, error = NULL, error_detail = NULL,
+                            result = NULL, finished_at = NULL, deadline_at = NULL,
+                            progress = NULL, report_status = NULL, report_round = 0,
+                            report_cursor = 0, report_next_at = NULL, report_error = NULL
             WHERE id = :id
             """,
             {"now": now, "id": job_id},

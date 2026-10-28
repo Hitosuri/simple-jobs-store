@@ -460,3 +460,14 @@ def test_report_body_is_camel_case_with_iso_times(
         "error": "boom",
         "errorDetail": None,
     }
+
+
+def test_api_retry_returns_job_and_409_code(client: TestClient) -> None:
+    job_id = create(client)["id"]
+    assert client.post(f"/api/jobs/{job_id}/cancel").status_code == 200
+    retried = client.post(f"/api/jobs/{job_id}/retry")
+    assert retried.status_code == 200
+    assert retried.json()["data"]["status"] == "pending"
+    again = client.post(f"/api/jobs/{job_id}/retry")
+    assert again.status_code == 409
+    assert error_code(again) == "JOB_NOT_RETRYABLE"

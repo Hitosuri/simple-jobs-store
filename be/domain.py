@@ -66,6 +66,7 @@ class ErrorCode(StrEnum):
     JOB_NOT_FOUND = "JOB_NOT_FOUND"
     LEASE_REJECTED = "LEASE_REJECTED"
     JOB_ALREADY_FINISHED = "JOB_ALREADY_FINISHED"
+    JOB_NOT_RETRYABLE = "JOB_NOT_RETRYABLE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -275,6 +276,13 @@ class JobAlreadyFinishedError(StoreError):
 
     code = ErrorCode.JOB_ALREADY_FINISHED
     message = "job already finished"
+
+
+class JobNotRetryableError(StoreError):
+    """Only failed or cancelled jobs can be retried."""
+
+    code = ErrorCode.JOB_NOT_RETRYABLE
+    message = "job is not failed or cancelled"
 
 
 @dataclass(frozen=True, slots=True)

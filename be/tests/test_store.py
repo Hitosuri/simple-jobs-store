@@ -18,6 +18,7 @@ from domain import (
     JobAlreadyFinishedError,
     JobId,
     JobNotFoundError,
+    JobNotRetryableError,
     JobStatus,
     Lease,
     LeaseRejectedError,
@@ -1128,3 +1129,81 @@ def test_report_writes_leave_updated_at_alone(
     clock.advance(settings.report_backoff_base_ms)
     record(conn, clock, settings, taken(conn, clock, settings), None)
     assert store.get_job(conn, job_id=claimed.job.id)[0].updated_at == updated_at
+
+
+def test_retry_failed_job_requeues_in_place_with_fresh_budget(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=1)
+    claimed = claim(conn, clock, settings, wid)
+    assert finish(conn, clock, settings, claimed, BOOM).status is JobStatus.FAILED
+    clock.advance(5_000)
+    retried = store.retry_job(conn, now=clock(), job_id=claimed.job.id)
+    assert retried.id == claimed.job.id
+    assert retried.status is JobStatus.PENDING
+    assert retried.available_at == clock.now
+    assert retried.requeued_at == clock.now
+    assert retried.attempts_used == 0
+    assert retried.attempt == claimed.job.attempt
+    assert retried.lease is None
+    assert (retried.error, retried.error_detail, retried.result) == (None, None, None)
+    assert (retried.finished_at, retried.deadline_at, retried.progress) == (None, None, None)
+    again = claim(conn, clock, settings, wid)
+    assert again.job.attempt == claimed.job.attempt + 1
+    assert finish(conn, clock, settings, again, BOOM).status is JobStatus.FAILED
+
+
+def test_retry_resets_report_like_a_fresh_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, BOOM, max_attempt=1)
+    assert report_of(conn, claimed.job.id).status is ReportStatus.PENDING
+    retried = store.retry_job(conn, now=clock(), job_id=claimed.job.id)
+    assert retried.report == Report(
+        methods=HOOKS, status=None, round=0, cursor=0, next_at=None, error=None
+    )
+
+
+def test_retry_cancelled_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = add_job(conn, clock, settings)
+    store.cancel_job(conn, now=clock(), job_id=job.id)
+    retried = store.retry_job(conn, now=clock(), job_id=job.id)
+    assert retried.status is JobStatus.PENDING
+    assert retried.finished_at is None
+
+
+@pytest.mark.parametrize("state", ["pending", "running", "success"])
+def test_retry_rejects_non_dead_jobs(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, state: str
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    job = add_job(conn, clock, settings)
+    if state != "pending":
+        claimed = claim(conn, clock, settings, wid)
+        if state == "success":
+            finish(conn, clock, settings, claimed, SuccessReport(result=None))
+    with pytest.raises(JobNotRetryableError):
+        store.retry_job(conn, now=clock(), job_id=job.id)
+
+
+def test_retry_unknown_job_raises(conn: sqlite3.Connection, clock: FakeClock) -> None:
+    with pytest.raises(JobNotFoundError):
+        store.retry_job(conn, now=clock(), job_id=JobId(999))
+
+
+def test_old_worker_cannot_reclaim_a_requeued_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=1)
+    claimed = claim(conn, clock, settings, wid)
+    clock.advance(settings.job_lease_ms)
+    run_cleanup(conn, clock, settings)
+    assert store.get_job(conn, job_id=claimed.job.id)[0].status is JobStatus.FAILED
+    store.retry_job(conn, now=clock(), job_id=claimed.job.id)
+    with pytest.raises(LeaseRejectedError):
+        heartbeat(conn, clock, settings, claimed)
+    assert store.get_job(conn, job_id=claimed.job.id)[0].status is JobStatus.PENDING
