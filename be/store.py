@@ -364,6 +364,9 @@ _ORDER_BY = {
 }
 
 
+_MAX_ID_DIGITS = len(str(2**63 - 1))
+
+
 def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
@@ -389,7 +392,12 @@ def _where(query: JobQuery, *, with_statuses: bool) -> tuple[str, dict[str, obje
     if query.q:
         like = "description LIKE '%' || :q || '%' ESCAPE '\\'"
         params["q"] = _like_escape(query.q)
-        if query.q.isascii() and query.q.isdigit() and int(query.q) <= 2**63 - 1:
+        if (
+            query.q.isascii()
+            and query.q.isdigit()
+            and len(query.q) <= _MAX_ID_DIGITS
+            and int(query.q) <= 2**63 - 1
+        ):
             clauses.append(f"(id = :q_id OR {like})")
             params["q_id"] = int(query.q)
         else:

@@ -601,6 +601,11 @@ def test_list_jobs_q_digits_also_matches_id(client: TestClient) -> None:
     assert ids(client, "q=12") == [jobs[11]["id"]]
 
 
+def test_list_jobs_q_huge_digit_string_does_not_crash(client: TestClient) -> None:
+    create(client)
+    assert ids(client, f"q={'9' * 5000}") == []
+
+
 def test_list_jobs_created_range(client: TestClient, clock: FakeClock) -> None:
     a = create(client)
     clock.advance(60_000)
@@ -609,18 +614,23 @@ def test_list_jobs_created_range(client: TestClient, clock: FakeClock) -> None:
     assert ids(client, "createdTo=2027-01-15T08:00:30Z") == [a["id"]]
 
 
-def test_list_jobs_sorts(client: TestClient, clock: FakeClock) -> None:
+def test_list_jobs_sorts(client: TestClient) -> None:
+    high = create(client, priority=9)
+    low = create(client, priority=1)
+    assert ids(client, "sort=oldest") == [high["id"], low["id"]]
+    assert ids(client, "sort=priority") == [high["id"], low["id"]]
+    assert ids(client, "sort=newest") == [low["id"], high["id"]]
+
+
+def test_list_jobs_sort_running_longest(client: TestClient, clock: FakeClock) -> None:
     register(client, "w1")
     register(client, "w2")
-    low = create(client, priority=1)
-    high = create(client, priority=9)
-    assert ids(client, "sort=oldest") == [low["id"], high["id"]]
-    assert ids(client, "sort=priority") == [high["id"], low["id"]]
-    assert ids(client, "sort=newest") == [high["id"], low["id"]]
+    first = create(client)
+    second = create(client)
     claim(client, "w1")
     clock.advance(1_000)
     claim(client, "w2")
-    assert ids(client, "status=running&sort=running_longest") == [high["id"], low["id"]]
+    assert ids(client, "status=running&sort=running_longest") == [first["id"], second["id"]]
 
 
 def test_list_jobs_rejects_bad_sort(client: TestClient) -> None:
