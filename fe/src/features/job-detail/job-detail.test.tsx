@@ -6,7 +6,7 @@ import { DetailBody } from './job-detail';
 const useJob = vi.fn();
 vi.mock('@/api/queries', () => ({ useJob: (id: number) => useJob(id), useOverview: vi.fn(), useWorkers: vi.fn() }));
 
-const render = () => renderToString(<DetailBody id={999999} onClose={() => {}} />);
+const render = (jobId = '999999') => renderToString(<DetailBody jobId={jobId} onClose={() => {}} />);
 
 describe('DetailBody', () => {
   it('renders "Job not found" with a Close action on JOB_NOT_FOUND', () => {
@@ -18,6 +18,14 @@ describe('DetailBody', () => {
     const html = render();
     expect(html).toContain('Job not found');
     expect(html).toMatch(/<button[^>]*>Close<\/button>/);
+  });
+
+  it('renders "Job not found" for a non-numeric id without calling the API', () => {
+    useJob.mockClear();
+    const html = render('abc');
+    expect(html).toContain('Job not found');
+    expect(html).toMatch(/<button[^>]*>Close<\/button>/);
+    expect(useJob).not.toHaveBeenCalled();
   });
 
   it('renders an in-block retry for other errors', () => {

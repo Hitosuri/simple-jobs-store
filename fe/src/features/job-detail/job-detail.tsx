@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { formatDateTime, buildTimeline } from './timeline';
 import { useNow } from '@/lib/use-now';
+import { parseJobId } from './job-id';
 import { Actions } from './actions';
 import { AttemptsTimeline } from './attempts-timeline';
 import { Facts } from './facts';
@@ -15,12 +16,12 @@ import { Hero } from './hero';
 import { JsonBlock } from './json-block';
 import { ProgressCard } from './progress-card';
 
-function NotFound({ id, onClose }: { id: number; onClose: () => void }) {
+function NotFound({ label, onClose }: { label: string; onClose: () => void }) {
   return (
     <div className="flex flex-col items-start gap-3 p-4 text-sm">
       <p className="text-base font-semibold">Job not found</p>
       <p className="text-muted-foreground">
-        Job #{id} does not exist. It may have been deleted or removed after the retention period.
+        Job #{label} does not exist. It may have been deleted or removed after the retention period.
       </p>
       <Button variant="outline" onClick={onClose} className="max-md:min-h-11">
         Close
@@ -84,11 +85,16 @@ function Loaded({ data, onClose }: { data: JobDetailData; onClose: () => void })
   );
 }
 
-export function DetailBody({ id, onClose }: { id: number; onClose: () => void }) {
+export function DetailBody({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+  const id = parseJobId(jobId);
+  return id === null ? <NotFound label={jobId} onClose={onClose} /> : <LoadedOrState id={id} onClose={onClose} />;
+}
+
+function LoadedOrState({ id, onClose }: { id: number; onClose: () => void }) {
   const job = useJob(id);
   if (job.data) return <Loaded data={job.data} onClose={onClose} />;
   if (job.error instanceof ApiError && job.error.code === 'JOB_NOT_FOUND')
-    return <NotFound id={id} onClose={onClose} />;
+    return <NotFound label={String(id)} onClose={onClose} />;
   if (job.isError) {
     return (
       <div className="p-4">
@@ -105,7 +111,7 @@ export function DetailBody({ id, onClose }: { id: number; onClose: () => void })
   );
 }
 
-export function JobDetail({ id, onClose }: { id: number; onClose: () => void }) {
+export function JobDetail({ jobId, onClose }: { jobId: string; onClose: () => void }) {
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent
@@ -113,13 +119,13 @@ export function JobDetail({ id, onClose }: { id: number; onClose: () => void }) 
         className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-none data-[side=right]:lg:w-[420px]"
       >
         <div className="flex items-center justify-between gap-2 px-3 py-2">
-          <SheetTitle>Job #{id}</SheetTitle>
+          <SheetTitle>Job #{jobId}</SheetTitle>
           <SheetDescription className="sr-only">Job details and actions</SheetDescription>
           <Button variant="ghost" size="icon" aria-label="Close" onClick={onClose} className="max-md:size-11">
             <X />
           </Button>
         </div>
-        <DetailBody id={id} onClose={onClose} />
+        <DetailBody jobId={jobId} onClose={onClose} />
       </SheetContent>
     </Sheet>
   );

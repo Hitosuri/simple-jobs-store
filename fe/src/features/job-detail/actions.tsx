@@ -37,7 +37,10 @@ export function Actions({ job, onDeleted }: { job: Job; onDeleted: () => void })
       label: 'Priority',
       Icon: ListOrdered,
       busy: setPriority.isPending,
-      run: () => setDialog('priority'),
+      run: () => {
+        setPriorityText(String(job.priority));
+        setDialog('priority');
+      },
     },
     { action: 'retry', label: 'Retry', Icon: RotateCcw, busy: retry.isPending, run: () => retry.mutate(job.id) },
     { action: 'delete', label: 'Delete', Icon: Trash2, busy: del.isPending, run: () => setDialog('delete') },
@@ -45,7 +48,7 @@ export function Actions({ job, onDeleted }: { job: Job; onDeleted: () => void })
 
   return (
     <>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {buttons.map(({ action, label, Icon, busy, run }) => {
           const allowed = can(action, job.status);
           const button = (
