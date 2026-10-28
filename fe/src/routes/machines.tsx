@@ -32,7 +32,7 @@ function MachinesScreen() {
   const ordered = useMemo(() => groupByMachine(workers.data ?? []).flatMap((g) => g.workers), [workers.data]);
 
   function setSearch(patch: Partial<MachinesUrlSearch>) {
-    navigate({ to: '/machines', search: (prev) => ({ ...prev, ...patch }) });
+    navigate({ from: '/machines', to: '/machines', search: (prev) => ({ ...prev, ...patch }) });
   }
 
   let lanesBody: React.ReactNode;

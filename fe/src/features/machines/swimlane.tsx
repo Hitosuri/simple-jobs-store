@@ -58,6 +58,7 @@ export function Swimlane({
           {workers.map((w) => (
             <div key={w.id} className={cn(ROW, 'border-t border-border', !w.connected && 'opacity-60')}>
               <Link
+                from="/machines"
                 to="/machines/$workerId"
                 params={{ workerId: w.id }}
                 search={(prev) => prev}

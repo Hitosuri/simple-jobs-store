@@ -9,6 +9,7 @@ function WorkerLine({ worker, busy, now }: { worker: Worker; busy: number; now: 
   const dot = !worker.connected ? 'bg-bad' : busy > 0 ? 'bg-ok' : 'bg-muted-foreground';
   return (
     <Link
+      from="/machines"
       to="/machines/$workerId"
       params={{ workerId: worker.id }}
       search={(prev) => prev}
