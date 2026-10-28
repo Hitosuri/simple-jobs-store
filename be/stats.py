@@ -29,6 +29,14 @@ ALERT_WORKER_MS = 3_600_000
 ALERT_ATTEMPT_MS = 900_000
 P95_WINDOW_MS = 7 * DAY_MS
 
+StatsRange = Literal["1h", "24h", "7d"]
+_RANGE_MS: dict[StatsRange, tuple[int, int]] = {
+    "1h": (3_600_000, 300_000),
+    "24h": (DAY_MS, 3_600_000),
+    "7d": (7 * DAY_MS, 21_600_000),
+}
+TOP_ERRORS = 10
+
 
 @dataclass(frozen=True, slots=True)
 class AttemptRow(Attempt):
@@ -104,6 +112,59 @@ class Overview:
     throughput: list[Bucket]
     alerts: list[Alert]
     run_p95_by_type: dict[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class KpiValues:
+    """Headline numbers of one window; rates and percentiles are None without data."""
+
+    finished: int
+    success_rate: float | None
+    wait_p95_ms: int | None
+    utilisation: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class StatsBucket:
+    """Jobs finished in the bucket starting at `start`, by outcome."""
+
+    start: EpochMs
+    success: int
+    failed: int
+    cancelled: int
+
+
+@dataclass(frozen=True, slots=True)
+class TypeStats:
+    """One job type's figures in the window."""
+
+    type: str
+    finished: int
+    success_rate: float | None
+    run_p50_ms: int | None
+    run_p95_ms: int | None
+    wait_p95_ms: int | None
+    pending_now: int
+
+
+@dataclass(frozen=True, slots=True)
+class ErrorCount:
+    """How often a type's attempts ended with an error in the window."""
+
+    error: str
+    type: str
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class Stats:
+    """Everything the Stats screen shows; `previous` is None for the unavailable prior window."""
+
+    kpis: KpiValues
+    previous: KpiValues | None
+    buckets: list[StatsBucket]
+    by_type: list[TypeStats]
+    top_errors: list[ErrorCount]
 
 
 def attempts_between(
@@ -230,10 +291,14 @@ def _alerts(conn: sqlite3.Connection, now: EpochMs) -> list[Alert]:
     return sorted(alerts, key=lambda a: a.at, reverse=True)
 
 
-def _p95(samples: list[int]) -> int:
+def _percentile(samples: list[int], pct: int) -> int:
     if len(samples) == 1:
         return samples[0]
-    return round(statistics.quantiles(samples, n=100, method="inclusive")[94])
+    return round(statistics.quantiles(samples, n=100, method="inclusive")[pct - 1])
+
+
+def _p(samples: list[int], pct: int) -> int | None:
+    return _percentile(samples, pct) if samples else None
 
 
 def _run_p95_by_type(conn: sqlite3.Connection, now: EpochMs) -> dict[str, int]:
@@ -246,7 +311,7 @@ def _run_p95_by_type(conn: sqlite3.Connection, now: EpochMs) -> dict[str, int]:
     durations: dict[str, list[int]] = {}
     for r in rows:
         durations.setdefault(r["type"], []).append(r["ms"])
-    return {job_type: _p95(ms) for job_type, ms in durations.items()}
+    return {job_type: _percentile(ms, 95) for job_type, ms in durations.items()}
 
 
 def overview(conn: sqlite3.Connection, *, now: EpochMs) -> Overview:
@@ -280,4 +345,154 @@ def overview(conn: sqlite3.Connection, *, now: EpochMs) -> Overview:
         throughput=_throughput(conn, now),
         alerts=_alerts(conn, now),
         run_p95_by_type=_run_p95_by_type(conn, now),
+    )
+
+
+def _finished_by_type(conn: sqlite3.Connection, start: int, end: int) -> dict[str, dict[str, int]]:
+    rows = conn.execute(
+        "SELECT type, status, COUNT(*) AS n FROM jobs"
+        " WHERE finished_at >= ? AND finished_at < ? GROUP BY type, status",
+        (start, end),
+    )
+    counts: dict[str, dict[str, int]] = {}
+    for r in rows:
+        counts.setdefault(r["type"], {})[r["status"]] = r["n"]
+    return counts
+
+
+def _wait_by_type(conn: sqlite3.Connection, start: int, end: int) -> dict[str, list[int]]:
+    rows = conn.execute(
+        "SELECT j.type, a.started_at - j.created_at AS ms FROM job_attempts a"
+        " JOIN jobs j ON j.id = a.job_id"
+        " WHERE a.attempt_no = 1 AND a.started_at >= ? AND a.started_at < ?",
+        (start, end),
+    )
+    waits: dict[str, list[int]] = {}
+    for r in rows:
+        waits.setdefault(r["type"], []).append(r["ms"])
+    return waits
+
+
+def _success_rate(counts: dict[str, int]) -> float | None:
+    decided = counts.get("success", 0) + counts.get("failed", 0)
+    return counts.get("success", 0) / decided if decided else None
+
+
+def _utilisation(
+    conn: sqlite3.Connection, now: int, start: int, end: int, capacity: int
+) -> float | None:
+    if capacity == 0:
+        return None
+    end = min(end, now)
+    attempts = attempts_between(conn, start=EpochMs(start), end=EpochMs(end), worker_id=None)
+    busy = sum(
+        min(now if a.ended_at is None else a.ended_at, end) - max(a.started_at, start)
+        for a in attempts
+    )
+    return busy / (capacity * (end - start))
+
+
+def _kpis(conn: sqlite3.Connection, now: int, start: int, end: int, capacity: int) -> KpiValues:
+    totals: dict[str, int] = {}
+    for counts in _finished_by_type(conn, start, end).values():
+        for status, n in counts.items():
+            totals[status] = totals.get(status, 0) + n
+    waits = [ms for per_type in _wait_by_type(conn, start, end).values() for ms in per_type]
+    return KpiValues(
+        finished=sum(totals.values()),
+        success_rate=_success_rate(totals),
+        wait_p95_ms=_p(waits, 95),
+        utilisation=_utilisation(conn, now, start, end, capacity),
+    )
+
+
+def _stats_buckets(conn: sqlite3.Connection, now: int, window: int, size: int) -> list[StatsBucket]:
+    count = window // size
+    first = now // size * size - (count - 1) * size
+    rows = conn.execute(
+        "SELECT (finished_at - :first) / :size AS slot, status, COUNT(*) AS n FROM jobs"
+        " WHERE finished_at >= :first AND finished_at < :end GROUP BY slot, status",
+        {"first": first, "end": first + count * size, "size": size},
+    )
+    cells = {(r["slot"], r["status"]): r["n"] for r in rows}
+    return [
+        StatsBucket(
+            start=EpochMs(first + i * size),
+            success=cells.get((i, "success"), 0),
+            failed=cells.get((i, "failed"), 0),
+            cancelled=cells.get((i, "cancelled"), 0),
+        )
+        for i in range(count)
+    ]
+
+
+def _by_type(conn: sqlite3.Connection, start: int, end: int) -> list[TypeStats]:
+    finished = _finished_by_type(conn, start, end)
+    waits = _wait_by_type(conn, start, end)
+    runs: dict[str, list[int]] = {}
+    for r in conn.execute(
+        "SELECT j.type, a.ended_at - a.started_at AS ms FROM job_attempts a"
+        " JOIN jobs j ON j.id = a.job_id"
+        " WHERE a.outcome = 'succeeded' AND a.ended_at >= ? AND a.ended_at < ?",
+        (start, end),
+    ):
+        runs.setdefault(r["type"], []).append(r["ms"])
+    pending = {
+        r["type"]: r["n"]
+        for r in conn.execute(
+            "SELECT type, COUNT(*) AS n FROM jobs WHERE status = 'pending' GROUP BY type"
+        )
+    }
+    types = finished.keys() | waits.keys() | runs.keys() | pending.keys()
+    rows = [
+        TypeStats(
+            type=t,
+            finished=sum(finished.get(t, {}).values()),
+            success_rate=_success_rate(finished.get(t, {})),
+            run_p50_ms=_p(runs.get(t, []), 50),
+            run_p95_ms=_p(runs.get(t, []), 95),
+            wait_p95_ms=_p(waits.get(t, []), 95),
+            pending_now=pending.get(t, 0),
+        )
+        for t in types
+    ]
+    return sorted(rows, key=lambda s: (-s.finished, s.type))
+
+
+def _top_errors(conn: sqlite3.Connection, start: int, end: int) -> list[ErrorCount]:
+    rows = conn.execute(
+        "SELECT COALESCE(a.error, a.outcome) AS error, j.type, COUNT(*) AS n"
+        " FROM job_attempts a JOIN jobs j ON j.id = a.job_id"
+        " WHERE a.outcome IN ('failed', 'lease_expired', 'deadline_exceeded')"
+        " AND a.ended_at >= ? AND a.ended_at < ?"
+        " GROUP BY 1, j.type ORDER BY n DESC, 1, j.type LIMIT ?",
+        (start, end, TOP_ERRORS),
+    )
+    return [ErrorCount(r["error"], r["type"], r["n"]) for r in rows]
+
+
+def stats_for_range(conn: sqlite3.Connection, *, now: EpochMs, range_: StatsRange) -> Stats:
+    """Gather everything the Stats screen needs for the window ending now.
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        range_: Window length: `1h`, `24h` or `7d`.
+
+    Returns:
+        KPIs with the prior window's values (None for `7d`, beyond retention), finished
+        buckets including the current partial one, per-type figures and the top errors.
+    """
+    window, size = _RANGE_MS[range_]
+    start, end = now - window, now + 1
+    capacity = sum(
+        w.concurrent_limit for w in store.list_workers(conn, now=now, include_offline=False)
+    )
+    previous = _kpis(conn, now, start - window, start, capacity) if range_ != "7d" else None
+    return Stats(
+        kpis=_kpis(conn, now, start, end, capacity),
+        previous=previous,
+        buckets=_stats_buckets(conn, now, window, size),
+        by_type=_by_type(conn, start, end),
+        top_errors=_top_errors(conn, start, end),
     )

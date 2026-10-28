@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 import stats
 from api.deps import ConnDep, NowDep
 from api.envelope import ApiOk
-from api.schemas import AttemptWindowOut, OverviewOut
+from api.schemas import AttemptWindowOut, OverviewOut, StatsOut
 from domain import EpochMs, WorkerId
 
 router = APIRouter(tags=["insights"])
@@ -55,3 +55,11 @@ def list_attempts(
 def get_overview(conn: ConnDep, now: NowDep) -> ApiOk[OverviewOut]:
     """Return everything the Overview screen shows."""
     return ApiOk[OverviewOut](data=OverviewOut.build(stats.overview(conn, now=now), now))
+
+
+@router.get("/stats")
+def get_stats(
+    conn: ConnDep, now: NowDep, range_: Annotated[stats.StatsRange, Query(alias="range")]
+) -> ApiOk[StatsOut]:
+    """Return KPIs, finished buckets, per-type figures and top errors for `range`."""
+    return ApiOk[StatsOut](data=StatsOut.build(stats.stats_for_range(conn, now=now, range_=range_)))

@@ -1,4 +1,5 @@
 import sqlite3
+import statistics
 
 import pytest
 
@@ -214,3 +215,86 @@ def test_attempts_between_includes_attempt_still_running_from_before_window(
     assert rows[0].ended_at is None
     assert rows[0].job_type == "a"
     assert [r.job_id for r in only_first] == [running]
+
+
+def _quantile(samples: list[int], pct: int) -> int:
+    return round(statistics.quantiles(samples, n=100, method="inclusive")[pct - 1])
+
+
+def test_stats_empty_store(conn: sqlite3.Connection) -> None:
+    result = stats.stats_for_range(conn, now=START, range_="24h")
+
+    assert result.kpis == stats.KpiValues(0, None, None, None)
+    assert result.previous == stats.KpiValues(0, None, None, None)
+    assert len(result.buckets) == 24
+    assert all((b.success, b.failed, b.cancelled) == (0, 0, 0) for b in result.buckets)
+    assert (result.by_type, result.top_errors) == ([], [])
+
+
+def test_stats_run_percentiles_and_counts(conn: sqlite3.Connection, settings: Settings) -> None:
+    worker = _worker(conn, settings, "w", START - HOUR)
+    runs = [1_000, 2_000, 3_000, 4_000]
+    for i, took in enumerate(runs):
+        _run(conn, settings, worker, START - 30 * MINUTE + i * MINUTE, ok=True, took=took)
+    _run(conn, settings, worker, START - 20 * MINUTE, "b", ok=False)
+    _job(conn, settings, START, "b")
+
+    result = stats.stats_for_range(conn, now=START, range_="1h")
+
+    a, b = result.by_type
+    assert (a.type, a.finished, a.success_rate) == ("a", 4, 1.0)
+    assert (a.run_p50_ms, a.run_p95_ms) == (_quantile(runs, 50), _quantile(runs, 95))
+    assert (b.type, b.finished, b.success_rate, b.run_p50_ms, b.pending_now) == (
+        "b",
+        1,
+        0.0,
+        None,
+        1,
+    )
+    assert result.kpis.finished == 5
+    assert result.kpis.success_rate == 0.8
+    assert result.kpis.wait_p95_ms == 0
+    assert [(e.error, e.type, e.count) for e in result.top_errors] == [("x", "b", 1)]
+    assert sum(bucket.success + bucket.failed for bucket in result.buckets) == 5
+    assert result.buckets[-1].start == START
+
+
+def test_stats_previous_window_and_7d(conn: sqlite3.Connection, settings: Settings) -> None:
+    worker = _worker(conn, settings, "w", START - 2 * HOUR)
+    _run(conn, settings, worker, START - 90 * MINUTE, ok=True)
+    _run(conn, settings, worker, START - 80 * MINUTE, ok=False)
+    _run(conn, settings, worker, START - 10 * MINUTE, ok=True)
+
+    hour = stats.stats_for_range(conn, now=START, range_="1h")
+    week = stats.stats_for_range(conn, now=START, range_="7d")
+
+    assert hour.kpis.finished == 1
+    assert hour.previous is not None
+    assert (hour.previous.finished, hour.previous.success_rate) == (2, 0.5)
+    assert week.previous is None
+    assert week.kpis.finished == 3
+
+
+def test_stats_utilisation(conn: sqlite3.Connection, settings: Settings) -> None:
+    worker = _worker(conn, settings, "w", START - 5 * MINUTE)
+    _run(conn, settings, worker, START - 40 * MINUTE, ok=True, took=30 * MINUTE)
+
+    result = stats.stats_for_range(conn, now=START, range_="1h")
+
+    assert result.kpis.utilisation == 0.25
+
+
+def test_stats_top_errors_fall_back_to_outcome(
+    conn: sqlite3.Connection, settings: Settings
+) -> None:
+    worker = _worker(conn, settings, "w", START - HOUR)
+    for i in range(2):
+        job_id = _run(conn, settings, worker, START - 30 * MINUTE + i)
+        conn.execute(
+            "UPDATE job_attempts SET outcome = 'lease_expired', ended_at = ? WHERE job_id = ?",
+            (START - MINUTE, job_id),
+        )
+
+    result = stats.stats_for_range(conn, now=START, range_="1h")
+
+    assert [(e.error, e.type, e.count) for e in result.top_errors] == [("lease_expired", "a", 2)]

@@ -42,6 +42,20 @@ def test_overview_shape(client: TestClient) -> None:
     assert data["runP95ByType"] == {}
 
 
+def test_stats_shape_and_validation(client: TestClient) -> None:
+    data = client.get("/api/stats", params={"range": "1h"}).json()["data"]
+
+    assert data["kpis"]["finished"] == {"value": 0, "previous": 0}
+    assert data["kpis"]["successRate"] == {"value": None, "previous": None}
+    assert len(data["buckets"]) == 12
+    assert data["byType"] == []
+    assert data["topErrors"] == []
+    week = client.get("/api/stats", params={"range": "7d"}).json()["data"]
+    assert week["kpis"]["finished"]["previous"] is None
+    assert client.get("/api/stats", params={"range": "2d"}).status_code == 422
+    assert client.get("/api/stats").status_code == 422
+
+
 def test_attempts_window(client: TestClient, clock: FakeClock) -> None:
     _register(client, "w1")
     job_id = _claim(client, "w1")

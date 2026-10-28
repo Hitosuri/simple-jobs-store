@@ -35,7 +35,7 @@ from domain import (
     Worker,
     WorkerId,
 )
-from stats import AttemptRow, Overview, RunningJob
+from stats import AttemptRow, Overview, RunningJob, Stats
 
 logger = logging.getLogger(__name__)
 
@@ -532,6 +532,102 @@ class OverviewOut(CamelModel):
                 for a in overview.alerts
             ],
             run_p95_by_type=overview.run_p95_by_type,
+        )
+
+
+class Kpi(CamelModel, Generic[T]):
+    """A headline value and the prior window's; None when there is no data."""
+
+    value: T | None
+    previous: T | None
+
+
+class KpisOut(CamelModel):
+    """Headline numbers of the Stats screen."""
+
+    finished: Kpi[int]
+    success_rate: Kpi[float]
+    wait_p95_ms: Kpi[int]
+    utilisation: Kpi[float]
+
+
+class StatsBucketOut(CamelModel):
+    """Jobs finished in the bucket starting at `start`."""
+
+    start: datetime
+    success: int
+    failed: int
+    cancelled: int
+
+
+class TypeStatsOut(CamelModel):
+    """One job type's figures in the window."""
+
+    type: str
+    finished: int
+    success_rate: float | None
+    run_p50_ms: int | None
+    run_p95_ms: int | None
+    wait_p95_ms: int | None
+    pending_now: int
+
+
+class ErrorCountOut(CamelModel):
+    """An error and how often it ended attempts of a type."""
+
+    error: str
+    type: str
+    count: int
+
+
+class StatsOut(CamelModel):
+    """`GET /api/stats` response."""
+
+    kpis: KpisOut
+    buckets: list[StatsBucketOut]
+    by_type: list[TypeStatsOut]
+    top_errors: list[ErrorCountOut]
+
+    @classmethod
+    def build(cls, result: Stats) -> Self:
+        """Convert stats, pairing each KPI with its previous-window value."""
+        now, before = result.kpis, result.previous
+        return cls(
+            kpis=KpisOut(
+                finished=Kpi(
+                    value=now.finished, previous=None if before is None else before.finished
+                ),
+                success_rate=Kpi(
+                    value=now.success_rate, previous=None if before is None else before.success_rate
+                ),
+                wait_p95_ms=Kpi(
+                    value=now.wait_p95_ms, previous=None if before is None else before.wait_p95_ms
+                ),
+                utilisation=Kpi(
+                    value=now.utilisation, previous=None if before is None else before.utilisation
+                ),
+            ),
+            buckets=[
+                StatsBucketOut(
+                    start=_dt(b.start), success=b.success, failed=b.failed, cancelled=b.cancelled
+                )
+                for b in result.buckets
+            ],
+            by_type=[
+                TypeStatsOut(
+                    type=t.type,
+                    finished=t.finished,
+                    success_rate=t.success_rate,
+                    run_p50_ms=t.run_p50_ms,
+                    run_p95_ms=t.run_p95_ms,
+                    wait_p95_ms=t.wait_p95_ms,
+                    pending_now=t.pending_now,
+                )
+                for t in result.by_type
+            ],
+            top_errors=[
+                ErrorCountOut(error=e.error, type=e.type, count=e.count) for e in result.top_errors
+            ],
         )
 
 
