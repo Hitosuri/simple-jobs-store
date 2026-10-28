@@ -77,6 +77,7 @@ export function useAttempts(from: string, to: string, worker?: string) {
     queryKey: ['attempts', from, to, worker],
     queryFn: () => api<AttemptRow[]>(`/attempts${toQuery({ from, to, worker })}`),
     refetchInterval: POLL_MS,
+    gcTime: 30_000,
     placeholderData: keepPreviousData,
   });
 }

@@ -68,10 +68,11 @@ export function Swimlane({
                   className={cn('size-[7px] shrink-0 rounded-full', w.connected ? 'bg-ok' : 'bg-bad')}
                 />
                 <span className="truncate">{w.name}</span>
+                <span className="sr-only">{w.connected ? 'online' : 'offline'}</span>
               </Link>
               <div className="relative h-6 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px)] bg-[length:25%_100%]">
                 {lanes.get(w.id)?.map((bar) => (
-                  <Bar key={`${bar.jobId}-${bar.leftPct}`} bar={bar} />
+                  <Bar key={`${bar.jobId}-${bar.attemptNo}`} bar={bar} />
                 ))}
               </div>
             </div>

@@ -14,6 +14,7 @@ export type MachinesUrlSearch = z.output<typeof machinesSearchSchema>;
 
 export interface LaneBar {
   jobId: number;
+  attemptNo: number;
   type: string;
   leftPct: number;
   widthPct: number;
@@ -29,6 +30,7 @@ export function layoutLanes(attempts: AttemptRow[], from: number, to: number): M
     if (end < start) continue;
     const bar: LaneBar = {
       jobId: a.jobId,
+      attemptNo: a.attemptNo,
       type: a.jobType,
       leftPct: ((start - from) / span) * 100,
       widthPct: ((end - start) / span) * 100,

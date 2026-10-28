@@ -22,7 +22,7 @@ function attempt(over: Partial<AttemptRow>): AttemptRow {
 describe('layoutLanes', () => {
   it('places a bar by percentage of the window', () => {
     const bars = layoutLanes([attempt({})], FROM, TO).get('w1');
-    expect(bars).toEqual([{ jobId: 1, type: 't', leftPct: 10, widthPct: 20, failed: false }]);
+    expect(bars).toEqual([{ jobId: 1, attemptNo: 1, type: 't', leftPct: 10, widthPct: 20, failed: false }]);
   });
 
   it('clips at both edges and drops attempts outside the window', () => {
