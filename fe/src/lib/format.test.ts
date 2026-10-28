@@ -9,6 +9,7 @@ describe('formatDuration', () => {
     [2_530_000, '42m 10s'],
     [3_780_000, '1h 03m'],
     [90_000_000, '1d 01h'],
+    [-5_000, '0s'],
   ])('%i -> %s', (ms, expected) => {
     expect(formatDuration(ms)).toBe(expected);
   });
@@ -28,7 +29,7 @@ describe('formatPercent', () => {
     expect(formatPercent(0.5, 0)).toBe('50%');
   });
   it('dashes null', () => {
-    expect(formatPercent(null)).toBe('-');
+    expect(formatPercent(null)).toBe('\u{2014}');
   });
 });
 
@@ -39,6 +40,7 @@ describe('formatAgo', () => {
     ['2026-10-28T11:59:30Z', '30s ago'],
     ['2026-10-28T09:00:00Z', '3h ago'],
     ['2026-10-26T12:00:00Z', '2d ago'],
+    ['2026-10-28T12:00:05Z', '0s ago'],
   ])('%s -> %s', (iso, expected) => {
     expect(formatAgo(iso, now)).toBe(expected);
   });

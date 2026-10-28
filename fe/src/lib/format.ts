@@ -6,7 +6,7 @@ function split(ms: number) {
 }
 
 export function formatDuration(ms: number): string {
-  const { d, h, m, s } = split(ms);
+  const { d, h, m, s } = split(Math.max(ms, 0));
   if (d > 0) return `${d}d ${pad(h)}h`;
   if (h > 0) return `${h}h ${pad(m)}m`;
   if (m > 0) return `${m}m ${pad(s)}s`;
@@ -18,7 +18,7 @@ export function formatNumber(n: number): string {
 }
 
 export function formatPercent(ratio: number | null, digits = 1): string {
-  if (ratio === null) return '-';
+  if (ratio === null) return '\u{2014}';
   return `${(ratio * 100).toFixed(digits)}%`;
 }
 

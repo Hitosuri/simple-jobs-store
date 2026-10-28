@@ -1,8 +1,6 @@
 import { Ban, CircleCheck, CircleX, Clock, LoaderCircle, TimerOff, Undo2, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-
-export type JobStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled';
-export type AttemptOutcome = 'succeeded' | 'failed' | 'lease_expired' | 'deadline_exceeded' | 'released' | 'cancelled';
+import type { AttemptOutcome, JobStatus } from '@/api/types';
 
 type Variant = 'neutral' | 'ok' | 'bad' | 'warn' | 'run';
 
