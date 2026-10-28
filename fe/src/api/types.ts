@@ -178,8 +178,8 @@ export interface Overview {
   counts: JobCounts;
   workers: WorkerLoad[];
   pendingByType: TypeQueue[];
-  finished24h: Finished;
-  finishedPrev24h: Finished;
+  finished24H: Finished;
+  finishedPrev24H: Finished;
   throughput: ThroughputBucket[];
   alerts: Alert[];
   runP95ByType: Record<string, number>;
