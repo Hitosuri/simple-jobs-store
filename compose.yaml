@@ -17,3 +17,11 @@ services:
         bind:
           create_host_path: false
     restart: unless-stopped
+
+  fe:
+    build: ./fe
+    depends_on:
+      - be
+    ports:
+      - "${FE_HOST:-127.0.0.1}:${FE_PORT:-8080}:80"
+    restart: unless-stopped

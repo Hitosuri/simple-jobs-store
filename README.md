@@ -16,12 +16,12 @@ and retried with exponential backoff. Backed by a single SQLite file.
 | Path           | What                                                                    |
 | -------------- | ----------------------------------------------------------------------- |
 | `be/`          | Store: Python 3.11, FastAPI, SQLite (stdlib `sqlite3`), managed by `uv` |
-| `fe/`          | Not created yet                                                         |
+| `fe/`          | Control room: React + Vite, served by nginx in Docker                   |
 | `.env.example` | Config template, copy to `.env`                                         |
 | `PROVIDER.md`  | Provider guide: submitting jobs, callbacks                              |
 | `WORKER.md`    | Worker developer guide                                                  |
 | `worker-example/` | Runnable Python worker (stdlib only)                                 |
-| `compose.yaml` | Docker Compose deploy of `be/` (image from `be/Dockerfile`)            |
+| `compose.yaml` | Docker Compose deploy of `be/` and `fe/` (images from their Dockerfiles) |
 
 
 ## Quick start
@@ -59,6 +59,16 @@ Published on `JOBS_STORE_HOST:JOBS_STORE_PORT` of the host (`127.0.0.1:8000` by 
 `JOBS_STORE_HOST=0.0.0.0` to reach it from other machines). The database is `jobs.db` (plus
 `-wal` / `-shm` while running) in `JOBS_STORE_DATA_DIR`. Compose refuses to start if that directory
 doesn't exist. Keep it on a local disk: SQLite WAL needs working file locks.
+
+## Control room
+
+A web UI over the store: overview, jobs (bulk retry and delete), job detail, machines, stats.
+
+- Docker: `docker compose up -d --build` also starts `fe`. Open `http://127.0.0.1:8080`
+  (`FE_HOST` / `FE_PORT` in `.env`). nginx serves the UI and proxies `/api/` to `be`; workers
+  keep calling `be` on its own published port.
+- Dev: with the store running, `cd fe && npm ci && npm run dev`, then open the URL Vite prints
+  (it proxies `/api` to `127.0.0.1:8000`).
 
 ## Configuration
 
