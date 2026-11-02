@@ -54,7 +54,7 @@ export function Actions({ job, onDeleted }: { job: Job; onDeleted: () => void })
           const allowed = can(action, job.status);
           const button = (
             <Button
-              variant={action === 'delete' ? 'destructive' : 'outline'}
+              variant={action === 'delete' ? 'destructive' : action === 'retry' && allowed ? 'default' : 'outline'}
               disabled={!allowed || busy}
               onClick={run}
               className="w-full max-md:h-11"

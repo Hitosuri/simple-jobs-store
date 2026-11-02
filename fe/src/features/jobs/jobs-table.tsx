@@ -3,7 +3,17 @@ import { StatusBadge } from '@/components/status-badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { attemptsShown, DASH, Elapsed, OpenLink, Progress, TypeChip, workerOf, type ListProps } from './job-cells';
+import {
+  attemptsShown,
+  DASH,
+  Elapsed,
+  ErrorLine,
+  OpenLink,
+  Progress,
+  TypeChip,
+  workerOf,
+  type ListProps,
+} from './job-cells';
 
 const LG = 'hidden lg:table-cell';
 const HEAD = 'sticky top-0 z-10 bg-card text-xs text-muted-foreground';
@@ -81,6 +91,7 @@ export function JobsTable({
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={job.status} />
+                  <ErrorLine job={job} className="mt-1 max-w-64" />
                 </TableCell>
                 <TableCell>
                   {worker ? (

@@ -1,7 +1,7 @@
 import type { Job, JobStatus } from '@/api/types';
 import { StatusBadge } from '@/components/status-badge';
 import { elapsedTone, toneClass } from '@/features/overview/thresholds';
-import { jobProgress } from '@/features/jobs/job-cells';
+import { jobProgress, shownStepStatus, type ShownStepStatus } from '@/features/jobs/job-cells';
 import { formatDuration } from '@/lib/format';
 import { typeColorVar } from '@/lib/type-color';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,15 @@ const TONE: Record<JobStatus, string> = {
   success: 'var(--ok)',
   failed: 'var(--bad)',
   cancelled: 'var(--muted-foreground)',
+};
+
+const BAR: Record<ShownStepStatus, string> = {
+  pending: 'bg-ok',
+  running: 'bg-run',
+  stopped: 'bg-muted-foreground',
+  done: 'bg-ok',
+  failed: 'bg-bad',
+  skipped: 'bg-ok',
 };
 
 function elapsedOf(job: Job, now: number): { ms: number | null; label: string } {
@@ -30,6 +39,7 @@ export function Hero({ job, now, p95 }: { job: Job; now: number; p95?: number })
   const pct = jobProgress(job);
   const doneSteps = steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
   const tone = TONE[job.status];
+  const failedWith = job.status === 'failed' ? job.error : null;
 
   return (
     <section
@@ -49,9 +59,11 @@ export function Hero({ job, now, p95 }: { job: Job; now: number; p95?: number })
         <span aria-hidden className="mt-0.5 h-4 w-1 shrink-0 rounded-[1px] bg-current" />
         <span className="min-w-0 text-base break-all text-foreground">{job.type}</span>
       </div>
+      {failedWith && <p className="mt-2 line-clamp-3 text-sm font-medium break-words text-foreground">{failedWith}</p>}
       <p
         className={cn(
-          'mt-2.5 text-[32px] leading-none font-semibold tracking-tight tabular-nums',
+          'mt-2.5 leading-none font-semibold tracking-tight tabular-nums',
+          failedWith ? 'text-xl' : 'text-[32px]',
           toneClass[slow ? 'warn' : 'fg'],
         )}
       >
@@ -65,17 +77,11 @@ export function Hero({ job, now, p95 }: { job: Job; now: number; p95?: number })
         <>
           <div className="mt-3 flex gap-0.5" role="img" aria-label={`Overall progress ${pct ?? 0}%`}>
             {steps.map((s) => {
-              const fill =
-                s.status === 'done' || s.status === 'skipped' || s.status === 'failed' ? 100 : (s.percent ?? 0);
+              const shown = shownStepStatus(s.status, job.status);
+              const fill = shown === 'done' || shown === 'skipped' || shown === 'failed' ? 100 : (s.percent ?? 0);
               return (
                 <span key={s.id} className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-inset">
-                  <span
-                    className={cn(
-                      'block h-full',
-                      s.status === 'failed' ? 'bg-bad' : s.status === 'running' ? 'bg-run' : 'bg-ok',
-                    )}
-                    style={{ width: `${fill}%` }}
-                  />
+                  <span className={cn('block h-full', BAR[shown])} style={{ width: `${fill}%` }} />
                 </span>
               );
             })}

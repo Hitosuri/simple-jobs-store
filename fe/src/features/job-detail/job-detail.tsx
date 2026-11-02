@@ -38,17 +38,22 @@ function Loaded({ data, onClose }: { data: JobDetailData; onClose: () => void })
   const worker = workers.data?.find((w) => w.id === (job.workerId ?? job.lastWorkerId));
   const items = useMemo(() => buildTimeline(attempts, job.requeuedAt, now), [attempts, job.requeuedAt, now]);
   const failure = [job.error, job.errorDetail].filter(Boolean).join('\n\n');
+  const failed = job.status === 'failed';
+  const errorBlock = failure && (
+    <JsonBlock title="Error" value={failure} summary={job.error ?? undefined} defaultOpen={failed} />
+  );
 
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-4">
         <Hero job={job} now={now} p95={overview.data?.runP95ByType[job.type]} />
         <Facts job={job} attempts={attempts} worker={worker} now={now} />
-        {job.progress && job.progress.length > 0 && <ProgressCard steps={job.progress} />}
+        {failed && errorBlock}
+        {job.progress && job.progress.length > 0 && <ProgressCard steps={job.progress} jobStatus={job.status} />}
         <AttemptsTimeline items={items} count={attempts.length} />
         <JsonBlock title="Description" value={job.description} />
         {job.result !== null && <JsonBlock title="Result" value={job.result} />}
-        {failure && <JsonBlock title="Error" value={failure} summary={job.error ?? undefined} />}
+        {!failed && errorBlock}
         <section className="rounded-lg border bg-card px-3 py-2.5 text-[13px]">
           <h3 className="mb-1 flex justify-between font-semibold">
             Report

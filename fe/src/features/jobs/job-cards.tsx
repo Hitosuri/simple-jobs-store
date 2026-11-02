@@ -2,7 +2,17 @@ import { useNavigate } from '@tanstack/react-router';
 import { StatusBadge } from '@/components/status-badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import { attemptsShown, DASH, Elapsed, OpenLink, Progress, TypeChip, workerOf, type ListProps } from './job-cells';
+import {
+  attemptsShown,
+  DASH,
+  Elapsed,
+  ErrorLine,
+  OpenLink,
+  Progress,
+  TypeChip,
+  workerOf,
+  type ListProps,
+} from './job-cells';
 
 export function JobCards({
   jobs,
@@ -47,6 +57,7 @@ export function JobCards({
                 </span>
                 <StatusBadge status={job.status} />
               </div>
+              <ErrorLine job={job} />
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span className="truncate">
                   {worker ? `${worker.name}${worker.ip ? ` · ${worker.ip}` : ''}` : DASH}

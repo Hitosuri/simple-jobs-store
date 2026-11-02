@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import type { Job, Worker } from '@/api/types';
+import type { Job, JobStatus, StepStatus, Worker } from '@/api/types';
 import { elapsedTone } from '@/features/overview/thresholds';
 import { formatAgo, formatDuration } from '@/lib/format';
 import { typeColorVar } from '@/lib/type-color';
@@ -19,6 +19,13 @@ export const DASH = '-';
 
 export function attemptsShown(job: Pick<Job, 'attemptsUsed' | 'status'>): number {
   return job.attemptsUsed + (job.status === 'running' ? 1 : 0);
+}
+
+export type ShownStepStatus = StepStatus | 'stopped';
+
+/** A step the worker last reported as running is stale once the job itself stopped running. */
+export function shownStepStatus(step: StepStatus, job: JobStatus): ShownStepStatus {
+  return step === 'running' && job !== 'running' ? 'stopped' : step;
 }
 
 export function jobProgress(job: Job): number | null {
@@ -69,6 +76,15 @@ export function Elapsed({ job, now, p95 }: { job: Job; now: number; p95: Record<
     );
   }
   return <span className="text-muted-foreground">{DASH}</span>;
+}
+
+export function ErrorLine({ job, className }: { job: Pick<Job, 'status' | 'error'>; className?: string }) {
+  if (job.status !== 'failed' || !job.error) return null;
+  return (
+    <div title={job.error} className={cn('truncate text-xs text-muted-foreground', className)}>
+      {job.error}
+    </div>
+  );
 }
 
 export function Progress({ job }: { job: Job }) {

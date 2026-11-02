@@ -6,10 +6,20 @@ function summarize(value: Json): string {
   return typeof value === 'string' ? 'text' : `JSON · ${String(value)}`;
 }
 
-export function JsonBlock({ title, value, summary }: { title: string; value: Json; summary?: string }) {
+export function JsonBlock({
+  title,
+  value,
+  summary,
+  defaultOpen,
+}: {
+  title: string;
+  value: Json;
+  summary?: string;
+  defaultOpen?: boolean;
+}) {
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return (
-    <details className="group rounded-lg border bg-card">
+    <details open={defaultOpen} className="group rounded-lg border bg-card">
       <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-3 px-3 py-2 text-[13px] font-semibold marker:content-none md:min-h-9">
         {title}
         <span className="min-w-0 truncate text-xs font-normal text-muted-foreground">
