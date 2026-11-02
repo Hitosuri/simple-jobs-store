@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
+import { RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -69,13 +70,14 @@ function RetryAll({ failed }: { failed: number }) {
   return (
     <>
       <Button
-        variant="link"
+        variant="outline"
         size="sm"
         disabled={bulk.isPending}
         onClick={() => setOpen(true)}
-        className="h-auto p-0 text-xs underline underline-offset-3 max-md:min-h-11"
+        className="mt-1 max-md:min-h-11"
       >
-        Retry all
+        <RotateCcw />
+        Retry {formatNumber(failed)}
       </Button>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
@@ -145,7 +147,7 @@ export function KpiCard({
           }
           tone={failedTone(finished.failed)}
         >
-          {failedNow > 0 ? <RetryAll failed={failedNow} /> : 'none in 24h'}
+          {failedNow > 0 ? <RetryAll failed={failedNow} /> : finished.failed > 0 ? 'none still failed' : 'none in 24h'}
         </Kpi>
       </div>
     </Card>
