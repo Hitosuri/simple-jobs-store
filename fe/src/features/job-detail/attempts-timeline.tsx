@@ -4,12 +4,22 @@ import { StatusBadge } from '@/components/status-badge';
 import { formatDuration } from '@/lib/format';
 import { formatDateTime, type TimelineItem } from './timeline';
 
-function AttemptRow({ attempt, durationMs }: { attempt: Attempt; durationMs: number | null }) {
+function AttemptRow({
+  attempt,
+  durationMs,
+  workerLabel,
+}: {
+  attempt: Attempt;
+  durationMs: number | null;
+  workerLabel?: string;
+}) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-semibold tabular-nums">#{attempt.attemptNo}</span>
-        <span className="min-w-0 break-all">{attempt.workerId}</span>
+        <span title={attempt.workerId} className="min-w-0 break-all">
+          {workerLabel ?? attempt.workerId}
+        </span>
         <StatusBadge status={attempt.outcome ?? 'running'} />
       </div>
       <p className="text-xs text-muted-foreground tabular-nums">
@@ -21,7 +31,15 @@ function AttemptRow({ attempt, durationMs }: { attempt: Attempt; durationMs: num
   );
 }
 
-export function AttemptsTimeline({ items, count }: { items: TimelineItem[]; count: number }) {
+export function AttemptsTimeline({
+  items,
+  count,
+  workerLabels,
+}: {
+  items: TimelineItem[];
+  count: number;
+  workerLabels: Map<string, string>;
+}) {
   return (
     <section className="rounded-lg border bg-card px-3 py-2.5">
       <h3 className="mb-2 flex justify-between text-[13px] font-semibold">
@@ -45,7 +63,11 @@ export function AttemptsTimeline({ items, count }: { items: TimelineItem[]; coun
                 key={item.attempt.attemptNo}
                 className="relative min-w-0 before:absolute before:top-1 before:-left-[18px] before:size-3 before:rounded-full before:border-2 before:border-muted-foreground before:bg-card"
               >
-                <AttemptRow attempt={item.attempt} durationMs={item.durationMs} />
+                <AttemptRow
+                  attempt={item.attempt}
+                  durationMs={item.durationMs}
+                  workerLabel={workerLabels.get(item.attempt.workerId)}
+                />
               </li>
             ),
           )}

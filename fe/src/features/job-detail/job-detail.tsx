@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { formatDateTime, buildTimeline } from './timeline';
 import { useNow } from '@/lib/use-now';
+import { workerLabels } from '@/lib/worker-label';
 import { parseJobId } from './job-id';
 import { Actions } from './actions';
 import { AttemptsTimeline } from './attempts-timeline';
@@ -37,6 +38,7 @@ function Loaded({ data, onClose }: { data: JobDetailData; onClose: () => void })
   const workers = useWorkers(true);
   const worker = workers.data?.find((w) => w.id === (job.workerId ?? job.lastWorkerId));
   const items = useMemo(() => buildTimeline(attempts, job.requeuedAt, now), [attempts, job.requeuedAt, now]);
+  const labels = useMemo(() => workerLabels(workers.data ?? []), [workers.data]);
   const failure = [job.error, job.errorDetail].filter(Boolean).join('\n\n');
   const failed = job.status === 'failed';
   const errorBlock = failure && (
@@ -50,7 +52,7 @@ function Loaded({ data, onClose }: { data: JobDetailData; onClose: () => void })
         <Facts job={job} attempts={attempts} worker={worker} now={now} />
         {failed && errorBlock}
         {job.progress && job.progress.length > 0 && <ProgressCard steps={job.progress} jobStatus={job.status} />}
-        <AttemptsTimeline items={items} count={attempts.length} />
+        <AttemptsTimeline items={items} count={attempts.length} workerLabels={labels} />
         <JsonBlock title="Description" value={job.description} />
         {job.result !== null && <JsonBlock title="Result" value={job.result} />}
         {!failed && errorBlock}

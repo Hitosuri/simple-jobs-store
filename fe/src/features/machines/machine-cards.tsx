@@ -3,9 +3,10 @@ import type { Worker, WorkerLoad } from '@/api/types';
 import { Card } from '@/components/ui/card';
 import { formatAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { workerLabels } from '@/lib/worker-label';
 import { groupByMachine } from './lanes';
 
-function WorkerLine({ worker, busy, now }: { worker: Worker; busy: number; now: number }) {
+function WorkerLine({ worker, label, busy, now }: { worker: Worker; label: string; busy: number; now: number }) {
   const dot = !worker.connected ? 'bg-bad' : busy > 0 ? 'bg-ok' : 'bg-muted-foreground';
   return (
     <Link
@@ -19,7 +20,9 @@ function WorkerLine({ worker, busy, now }: { worker: Worker; busy: number; now: 
       )}
     >
       <span aria-hidden className={cn('size-[7px] shrink-0 rounded-full', dot)} />
-      <span className="min-w-0 flex-1 truncate">{worker.name}</span>
+      <span title={label} className="min-w-0 flex-1 truncate">
+        {label}
+      </span>
       {worker.connected ? (
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
           {busy}/{worker.concurrentLimit} slots
@@ -41,6 +44,7 @@ export function MachineCards({ workers, loads, now }: { workers: Worker[]; loads
         const live = ws.filter((w) => w.connected);
         const total = live.reduce((n, w) => n + w.concurrentLimit, 0);
         const busy = live.reduce((n, w) => n + (busyOf.get(w.id) ?? 0), 0);
+        const labels = workerLabels(ws);
         return (
           <Card key={ip} className="gap-1 px-3 py-3">
             <div className="flex items-baseline justify-between gap-2">
@@ -50,7 +54,7 @@ export function MachineCards({ workers, loads, now }: { workers: Worker[]; loads
               </span>
             </div>
             {ws.map((w) => (
-              <WorkerLine key={w.id} worker={w} busy={busyOf.get(w.id) ?? 0} now={now} />
+              <WorkerLine key={w.id} worker={w} label={labels.get(w.id)!} busy={busyOf.get(w.id) ?? 0} now={now} />
             ))}
           </Card>
         );

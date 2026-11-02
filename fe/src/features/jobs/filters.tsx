@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { workerLabels } from '@/lib/worker-label';
 import { JOBS_DEFAULTS, type JobsUrlSearch } from './search';
 
 const ANY = '__any';
@@ -99,9 +100,10 @@ function TypeFilter({
 }
 
 function Controls({ search, typeOptions, workers, onChange }: FilterProps) {
+  const labels = workerLabels(workers);
   const workerOptions = [
     { value: ANY, label: 'All workers' },
-    ...workers.map((w) => ({ value: w.id, label: w.name })),
+    ...workers.map((w) => ({ value: w.id, label: labels.get(w.id)! })),
     ...(search.worker && !workers.some((w) => w.id === search.worker)
       ? [{ value: search.worker, label: search.worker }]
       : []),

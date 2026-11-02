@@ -5,6 +5,7 @@ import { groupByMachine } from '@/features/machines/lanes';
 import { Card } from '@/components/ui/card';
 import { formatAgo, formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { workerLabels } from '@/lib/worker-label';
 import { PlainDot, Slot, SlotDot } from './slot';
 
 const DOT_STRIP_ABOVE = 8;
@@ -14,7 +15,17 @@ function slotsOf({ worker, running }: WorkerLoad) {
   return { running, idle };
 }
 
-function WorkerRow({ load, now, p95 }: { load: WorkerLoad; now: number; p95: Record<string, number> }) {
+function WorkerRow({
+  load,
+  label,
+  now,
+  p95,
+}: {
+  load: WorkerLoad;
+  label: string;
+  now: number;
+  p95: Record<string, number>;
+}) {
   const { worker } = load;
   const { running, idle } = slotsOf(load);
   const dotClass = !worker.connected ? 'bg-bad' : running.length ? 'bg-ok' : 'bg-muted-foreground';
@@ -23,10 +34,11 @@ function WorkerRow({ load, now, p95 }: { load: WorkerLoad; now: number; p95: Rec
       <Link
         to="/machines/$workerId"
         params={{ workerId: worker.id }}
-        className="flex min-h-11 w-24 shrink-0 items-center gap-1.5 text-[13px] md:min-h-0"
+        title={label}
+        className="flex min-h-11 w-32 shrink-0 items-center gap-1.5 text-[13px] md:min-h-0 md:w-44"
       >
         <span aria-hidden className={cn('size-[7px] shrink-0 rounded-full', dotClass)} />
-        <span className="truncate">{worker.name}</span>
+        <span className="truncate">{label}</span>
       </Link>
       {!worker.connected ? (
         <span className="self-center text-xs text-muted-foreground">
@@ -70,6 +82,7 @@ function Machine({
   p95: Record<string, number>;
 }) {
   const [open, setOpen] = useState(false);
+  const labels = workerLabels(loads.map((l) => l.worker));
   const live = loads.filter((l) => l.worker.connected);
   const lost = loads.length - live.length;
   const total = live.reduce((n, l) => n + l.worker.concurrentLimit, 0);
@@ -109,7 +122,7 @@ function Machine({
       <div className="hidden flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground md:flex">{summary}</div>
       <div className={cn(!open && 'max-md:hidden')}>
         {loads.map((load) => (
-          <WorkerRow key={load.worker.id} load={load} now={now} p95={p95} />
+          <WorkerRow key={load.worker.id} load={load} label={labels.get(load.worker.id)!} now={now} p95={p95} />
         ))}
       </div>
     </div>

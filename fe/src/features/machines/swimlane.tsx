@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import type { Worker } from '@/api/types';
 import { typeColorVar } from '@/lib/type-color';
 import { cn } from '@/lib/utils';
+import { workerLabels } from '@/lib/worker-label';
 import type { LaneBar } from './lanes';
 
 const clock = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -43,6 +44,7 @@ export function Swimlane({
   to: number;
 }) {
   const types = [...new Set([...lanes.values()].flatMap((bars) => bars.map((b) => b.type)))].sort();
+  const labels = workerLabels(workers);
   return (
     <div className="flex flex-col gap-2">
       <div className="overflow-x-auto">
@@ -68,7 +70,9 @@ export function Swimlane({
                   aria-hidden
                   className={cn('size-[7px] shrink-0 rounded-full', w.connected ? 'bg-ok' : 'bg-bad')}
                 />
-                <span className="truncate">{w.name}</span>
+                <span title={labels.get(w.id)} className="truncate">
+                  {labels.get(w.id)}
+                </span>
                 <span className="sr-only">{w.connected ? 'online' : 'offline'}</span>
               </Link>
               <div className="relative h-6 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px)] bg-[length:25%_100%]">
