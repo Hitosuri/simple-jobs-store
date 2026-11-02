@@ -58,7 +58,7 @@ export function Swimlane({
             </div>
           </div>
           {workers.map((w) => (
-            <div key={w.id} className={cn(ROW, 'border-t border-border', !w.connected && 'opacity-60')}>
+            <div key={w.id} className={cn(ROW, 'border-t border-border', !w.connected && 'text-muted-foreground')}>
               <Link
                 from="/machines"
                 to="/machines/$workerId"

@@ -16,7 +16,7 @@ function WorkerLine({ worker, label, busy, now }: { worker: Worker; label: strin
       search={(prev) => prev}
       className={cn(
         'flex min-h-11 items-center gap-2 rounded-md px-1 text-[13px] hover:bg-inset md:min-h-8',
-        !worker.connected && 'opacity-60',
+        !worker.connected && 'text-muted-foreground',
       )}
     >
       <span aria-hidden className={cn('size-[7px] shrink-0 rounded-full', dot)} />

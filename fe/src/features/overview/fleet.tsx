@@ -30,12 +30,15 @@ function WorkerRow({
   const { running, idle } = slotsOf(load);
   const dotClass = !worker.connected ? 'bg-bad' : running.length ? 'bg-ok' : 'bg-muted-foreground';
   return (
-    <div className={cn('my-1.5 flex items-start gap-2.5 md:items-center', !worker.connected && 'opacity-60')}>
+    <div className="my-1.5 flex items-start gap-2.5 md:items-center">
       <Link
         to="/machines/$workerId"
         params={{ workerId: worker.id }}
         title={label}
-        className="flex min-h-11 w-32 shrink-0 items-center gap-1.5 text-[13px] md:min-h-0 md:w-44"
+        className={cn(
+          'flex min-h-11 w-32 shrink-0 items-center gap-1.5 text-[13px] md:min-h-0 md:w-44',
+          !worker.connected && 'text-muted-foreground',
+        )}
       >
         <span aria-hidden className={cn('size-[7px] shrink-0 rounded-full', dotClass)} />
         <span className="truncate">{label}</span>
