@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -32,7 +33,7 @@ function Kpi({
   children,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   tone: Tone;
   children: React.ReactNode;
 }) {
@@ -126,7 +127,24 @@ export function KpiCard({
         <Kpi label="Success · 24h" value={formatPercent(rate)} tone={rateTone(rate)}>
           {delta ?? `${formatNumber(finished.success + finished.failed)} jobs`}
         </Kpi>
-        <Kpi label="Failed · 24h" value={formatNumber(finished.failed)} tone={failedTone(finished.failed)}>
+        <Kpi
+          label="Failed · 24h"
+          value={
+            failedNow > 0 ? (
+              <Link
+                to="/jobs"
+                search={{ status: ['failed'] }}
+                aria-label={`${formatNumber(finished.failed)} failed in 24h, show failed jobs`}
+                className="underline-offset-4 hover:underline"
+              >
+                {formatNumber(finished.failed)}
+              </Link>
+            ) : (
+              formatNumber(finished.failed)
+            )
+          }
+          tone={failedTone(finished.failed)}
+        >
           {failedNow > 0 ? <RetryAll failed={failedNow} /> : 'none in 24h'}
         </Kpi>
       </div>
