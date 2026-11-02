@@ -14,7 +14,19 @@ function Tile({ label, value, sub, tone = 'fg' }: { label: string; value: string
   );
 }
 
-export function Facts({ job, attempts, worker, now }: { job: Job; attempts: Attempt[]; worker?: Worker; now: number }) {
+export function Facts({
+  job,
+  attempts,
+  worker,
+  workerLabel,
+  now,
+}: {
+  job: Job;
+  attempts: Attempt[];
+  worker?: Worker;
+  workerLabel?: string;
+  now: number;
+}) {
   const workerId = job.workerId ?? job.lastWorkerId;
   const unsuccessful = attempts.filter((a) => a.outcome !== null && a.outcome !== 'succeeded').length;
   const leaseLeft = job.status === 'running' && job.leaseUntil ? Date.parse(job.leaseUntil) - now : null;
@@ -22,7 +34,7 @@ export function Facts({ job, attempts, worker, now }: { job: Job; attempts: Atte
 
   return (
     <div className="grid grid-cols-2 gap-2">
-      <Tile label={job.workerId ? 'Worker' : 'Last worker'} value={worker?.name ?? workerId ?? '-'} sub={worker?.ip} />
+      <Tile label={job.workerId ? 'Worker' : 'Last worker'} value={workerLabel ?? workerId ?? '-'} sub={worker?.ip} />
       <Tile
         label="Lease"
         value={leaseLeft === null ? '-' : leaseLeft > 0 ? formatDuration(leaseLeft) : 'expired'}

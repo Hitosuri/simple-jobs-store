@@ -49,7 +49,7 @@ function Loaded({ data, onClose }: { data: JobDetailData; onClose: () => void })
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-4">
         <Hero job={job} now={now} p95={overview.data?.runP95ByType[job.type]} />
-        <Facts job={job} attempts={attempts} worker={worker} now={now} />
+        <Facts job={job} attempts={attempts} worker={worker} workerLabel={worker && labels.get(worker.id)} now={now} />
         {failed && errorBlock}
         {job.progress && job.progress.length > 0 && <ProgressCard steps={job.progress} jobStatus={job.status} />}
         <AttemptsTimeline items={items} count={attempts.length} workerLabels={labels} />
