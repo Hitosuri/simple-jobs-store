@@ -16,13 +16,13 @@ export function StatusTabs({
   const total = counts ? STATUSES.reduce((n, s) => n + counts[s], 0) : undefined;
   const label = (name: string, n: number | undefined) => (
     <>
-      {name}
+      {name}{' '}
       <span className="text-xs text-muted-foreground tabular-nums">{n === undefined ? '' : formatNumber(n)}</span>
     </>
   );
   return (
     <Tabs value={value ?? 'all'} onValueChange={(v) => onChange(v === 'all' ? undefined : (v as JobStatus))}>
-      <TabsList variant="line" className="h-auto w-full flex-wrap justify-start gap-1 pb-2">
+      <TabsList variant="line" className="w-full flex-wrap group-data-horizontal/tabs:h-auto justify-start gap-1 pb-2">
         <TabsTrigger value="all" className="flex-none px-3 max-md:min-h-11">
           {label('all', total)}
         </TabsTrigger>
