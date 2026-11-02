@@ -1,4 +1,19 @@
+import { Copy } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Json } from '@/api/types';
+import { Button } from '@/components/ui/button';
+
+async function copyText(text: string) {
+  if (navigator.clipboard) return navigator.clipboard.writeText(text);
+  // navigator.clipboard only exists in secure contexts; the control room is served over plain http on the LAN.
+  const area = document.createElement('textarea');
+  area.value = text;
+  document.body.append(area);
+  area.select();
+  const ok = document.execCommand('copy');
+  area.remove();
+  if (!ok) throw new Error('copy failed');
+}
 
 function summarize(value: Json): string {
   if (Array.isArray(value)) return `JSON · ${value.length} items`;
@@ -29,9 +44,26 @@ export function JsonBlock({
           </span>
         </span>
       </summary>
-      <pre className="max-h-64 overflow-auto border-t bg-inset p-3 font-mono text-xs break-words whitespace-pre-wrap">
-        {text}
-      </pre>
+      <div className="relative border-t">
+        <Button
+          variant="outline"
+          size="xs"
+          aria-label={`Copy ${title}`}
+          onClick={() =>
+            copyText(text).then(
+              () => toast(`${title} copied`),
+              () => toast.error('Could not copy'),
+            )
+          }
+          className="absolute top-2 right-2 max-md:size-11"
+        >
+          <Copy />
+          <span className="max-md:sr-only">Copy</span>
+        </Button>
+        <pre className="max-h-64 overflow-auto bg-inset p-3 pr-20 font-mono text-xs break-words whitespace-pre-wrap">
+          {text}
+        </pre>
+      </div>
     </details>
   );
 }

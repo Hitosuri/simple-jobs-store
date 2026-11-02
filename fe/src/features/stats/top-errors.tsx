@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import type { ErrorCount } from '@/api/types';
 import { Card } from '@/components/ui/card';
 import { TypeChip } from '@/features/jobs/job-cells';
@@ -12,16 +13,22 @@ export function TopErrors({ errors }: { errors: ErrorCount[] }) {
       ) : (
         <ul className="divide-y divide-border">
           {errors.map((e) => (
-            <li key={`${e.type}\0${e.error}`} className="flex items-start gap-3 py-2 text-[13px]">
-              <div className="min-w-0 flex-1">
-                <p title={e.error} className="line-clamp-2 break-words">
-                  {e.error}
-                </p>
-                <div className="mt-0.5 text-xs">
-                  <TypeChip type={e.type} />
+            <li key={`${e.type}\0${e.error}`}>
+              <Link
+                to="/jobs"
+                search={{ status: ['failed'], type: [e.type] }}
+                className="-mx-2 flex items-start gap-3 rounded-md px-2 py-2 text-[13px] hover:bg-inset"
+              >
+                <div className="min-w-0 flex-1">
+                  <p title={e.error} className="line-clamp-2 break-words">
+                    {e.error}
+                  </p>
+                  <div className="mt-0.5 text-xs">
+                    <TypeChip type={e.type} />
+                  </div>
                 </div>
-              </div>
-              <span className="font-semibold tabular-nums">{formatNumber(e.count)}</span>
+                <span className="font-semibold tabular-nums">{formatNumber(e.count)}</span>
+              </Link>
             </li>
           ))}
         </ul>
