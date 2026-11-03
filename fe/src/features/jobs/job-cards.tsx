@@ -2,13 +2,15 @@ import { useNavigate } from '@tanstack/react-router';
 import { StatusBadge } from '@/components/status-badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
+import { JobActions } from './job-actions';
 import {
   attemptsShown,
-  DASH,
-  Elapsed,
+  Duration,
   ErrorLine,
+  jobDuration,
   OpenLink,
   Progress,
+  Started,
   TypeChip,
   workerOf,
   type ListProps,
@@ -30,6 +32,14 @@ export function JobCards({
       {jobs.map((job) => {
         const worker = workerOf(job, workers);
         const isSelected = selected.has(job.id);
+        const tries = attemptsShown(job);
+        const extra = [
+          worker && [worker.name, worker.ip].filter(Boolean).join(' · '),
+          (tries > 1 || job.status === 'failed') && `attempt ${tries}/${job.maxAttempt}`,
+          job.priority !== 0 && `priority ${job.priority}`,
+        ]
+          .filter(Boolean)
+          .join(' · ');
         const open = () => navigate({ to: '/jobs/$jobId', params: { jobId: String(job.id) }, search: (p) => p });
         return (
           <li
@@ -41,15 +51,14 @@ export function JobCards({
               job.id === openId && 'bg-primary/[0.16]',
             )}
           >
-            {selectMode && (
-              <Checkbox
-                aria-label={`Select job ${job.id}`}
-                checked={isSelected}
-                onCheckedChange={() => onToggle(job.id)}
-                className="mt-1"
-              />
-            )}
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <Checkbox
+              aria-label={`Select job ${job.id}`}
+              checked={isSelected}
+              onCheckedChange={() => onToggle(job.id)}
+              onClick={(e) => e.stopPropagation()}
+              className={cn('mt-3.5', !selectMode && 'max-md:hidden')}
+            />
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5 tabular-nums">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-2 text-sm">
                   <OpenLink id={job.id} className="inline-flex min-h-11 items-center font-medium" />
@@ -58,19 +67,20 @@ export function JobCards({
                 <StatusBadge status={job.status} />
               </div>
               <ErrorLine job={job} />
+              <Progress job={job} />
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span className="truncate">
-                  {worker ? `${worker.name}${worker.ip ? ` · ${worker.ip}` : ''}` : DASH}
-                </span>
-                <span className="shrink-0 text-foreground">
-                  <Elapsed job={job} now={now} p95={p95} />
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
-                <span>
-                  attempt {attemptsShown(job)}/{job.maxAttempt} · priority {job.priority}
-                </span>
-                <Progress job={job} />
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate">
+                    <Started job={job} now={now} labelled />
+                  </span>
+                  {jobDuration(job, now) && (
+                    <span className="truncate">
+                      <Duration job={job} now={now} p95={p95} labelled />
+                    </span>
+                  )}
+                  {extra && <span className="truncate">{extra}</span>}
+                </div>
+                <JobActions job={job} variant="row" />
               </div>
             </div>
           </li>

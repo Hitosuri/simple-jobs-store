@@ -1,21 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Search, SlidersHorizontal } from 'lucide-react';
+import { Search, SlidersHorizontal } from 'lucide-react';
 import type { Worker } from '@/api/types';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 import { workerLabels } from '@/lib/worker-label';
+import { typeFilterLabel } from './list';
 import { JOBS_DEFAULTS, type JobsUrlSearch } from './search';
 
 const ANY = '__any';
 const SEARCH_DEBOUNCE_MS = 300;
+const TRIGGER = 'max-md:h-11 max-md:w-full md:min-w-32';
 
 const CREATED = [
   { value: 'all', label: 'Any time' },
@@ -51,7 +48,7 @@ function FilterSelect({
 }) {
   return (
     <Select items={options} value={value} onValueChange={(v) => v && onChange(v)}>
-      <SelectTrigger aria-label={label} className="max-md:h-11 max-md:w-full md:min-w-36">
+      <SelectTrigger aria-label={label} className={TRIGGER}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false}>
@@ -75,27 +72,21 @@ function TypeFilter({
   onChange: (t: string[]) => void;
 }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="outline" className="max-md:h-11 max-md:w-full max-md:justify-between" />}
-      >
-        {selected.length ? `Type: ${selected.length}` : 'All types'}
-        <ChevronDown />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
-        {options.length === 0 && <p className="px-2 py-1.5 text-sm text-muted-foreground">No types on this page</p>}
+    <Select multiple value={selected} onValueChange={onChange}>
+      <SelectTrigger aria-label="Type" className={cn(TRIGGER, 'md:max-w-60')}>
+        <SelectValue className="min-w-0">
+          <span className="truncate">{typeFilterLabel(selected)}</span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false} align="start" className="max-h-72">
+        {options.length === 0 && <p className="px-2 py-1.5 text-sm text-muted-foreground">No job types seen yet</p>}
         {options.map((t) => (
-          <DropdownMenuCheckboxItem
-            key={t}
-            checked={selected.includes(t)}
-            onCheckedChange={(on) => onChange(on ? [...selected, t] : selected.filter((x) => x !== t))}
-            className="max-md:min-h-11"
-          >
+          <SelectItem key={t} value={t} className="max-md:min-h-11">
             {t}
-          </DropdownMenuCheckboxItem>
+          </SelectItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -142,7 +133,20 @@ export function Filters(props: FilterProps) {
   const [text, setText] = useState(search.q ?? '');
   const [sheetOpen, setSheetOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const input = useRef<HTMLInputElement>(null);
   useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      const t = e.target as HTMLElement;
+      if (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+      if (t.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
+      e.preventDefault();
+      input.current?.focus();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const active =
     (search.type?.length ?? 0) +
     Number(!!search.worker) +
@@ -156,24 +160,31 @@ export function Filters(props: FilterProps) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative min-w-0 flex-1 md:max-w-64">
+    <div className="flex shrink-0 flex-wrap items-center gap-2">
+      <div className="relative min-w-0 flex-1 md:max-w-72 md:min-w-64">
         <Search aria-hidden className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           type="search"
+          ref={input}
           aria-label="Search jobs"
-          placeholder="Search id or description"
+          aria-keyshortcuts="/"
+          placeholder="Search id, description or error"
           value={text}
           onChange={(e) => typeQuery(e.target.value)}
           className="pl-8 max-md:h-11"
         />
       </div>
-      <div className="hidden items-center gap-2 md:flex">
+      <div className="hidden flex-wrap items-center gap-2 md:flex">
         <Controls {...props} />
       </div>
-      <Button variant="outline" onClick={() => setSheetOpen(true)} className="md:hidden max-md:h-11">
+      <Button
+        variant="outline"
+        aria-label={active > 0 ? `Filters, ${active} active` : 'Filters'}
+        onClick={() => setSheetOpen(true)}
+        className="min-w-11 md:hidden max-md:h-11"
+      >
         <SlidersHorizontal />
-        Filters{active > 0 && <span className="tabular-nums">({active})</span>}
+        {active > 0 && <span className="tabular-nums">{active}</span>}
       </Button>
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="bottom" className="md:hidden">

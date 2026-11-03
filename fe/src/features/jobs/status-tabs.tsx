@@ -1,4 +1,5 @@
 import type { JobCounts, JobStatus } from '@/api/types';
+import { statusLabel } from '@/components/status-badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatNumber } from '@/lib/format';
 
@@ -21,14 +22,18 @@ export function StatusTabs({
     </>
   );
   return (
-    <Tabs value={value ?? 'all'} onValueChange={(v) => onChange(v === 'all' ? undefined : (v as JobStatus))}>
+    <Tabs
+      className="shrink-0"
+      value={value ?? 'all'}
+      onValueChange={(v) => onChange(v === 'all' ? undefined : (v as JobStatus))}
+    >
       <TabsList variant="line" className="w-full flex-wrap group-data-horizontal/tabs:h-auto justify-start gap-1 pb-2">
-        <TabsTrigger value="all" className="flex-none px-3 max-md:min-h-11">
-          {label('all', total)}
+        <TabsTrigger value="all" className="h-8 flex-none px-3 max-md:min-h-11">
+          {label('All', total)}
         </TabsTrigger>
         {STATUSES.map((s) => (
-          <TabsTrigger key={s} value={s} className="flex-none px-3 max-md:min-h-11">
-            {label(s, counts?.[s])}
+          <TabsTrigger key={s} value={s} className="h-8 flex-none px-3 max-md:min-h-11">
+            {label(statusLabel(s), counts?.[s])}
           </TabsTrigger>
         ))}
       </TabsList>

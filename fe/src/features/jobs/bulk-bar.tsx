@@ -56,19 +56,19 @@ export function BulkBar({ jobs, onClear }: { jobs: Job[]; onClear: () => void })
       <div
         role="toolbar"
         aria-label="Bulk actions"
-        className="fixed inset-x-3 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 flex flex-wrap items-center gap-2 rounded-xl border bg-popover p-2 shadow-lg md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:flex-nowrap lg:bottom-4 lg:left-[calc(50%+7rem)]"
+        className="flex w-full flex-wrap items-center gap-2 @min-[44rem]:flex-nowrap"
       >
-        <span className="px-2 text-sm font-medium tabular-nums">{formatNumber(jobs.length)} selected</span>
+        <span className="text-sm font-medium tabular-nums">{formatNumber(jobs.length)} selected</span>
         <Button
           variant="ghost"
           size="icon"
           aria-label="Clear selection"
           onClick={onClear}
-          className="ml-auto md:order-last max-md:size-11"
+          className="ml-auto @min-[44rem]:order-last max-md:size-11"
         >
           <X />
         </Button>
-        <div className="grid basis-full grid-cols-4 gap-1 md:flex md:basis-auto">
+        <div className="grid basis-full grid-cols-4 gap-1 @min-[44rem]:flex @min-[44rem]:basis-auto">
           {ACTIONS.map(({ action, label, Icon }) => {
             const n = eligible(action).length;
             const reason = n ? undefined : whyNot(action, jobs[0]?.status ?? 'success');

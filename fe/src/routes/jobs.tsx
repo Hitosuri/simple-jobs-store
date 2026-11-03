@@ -1,25 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createFileRoute, Outlet, stripSearchParams, useMatch, useNavigate } from '@tanstack/react-router';
-import { useAtom } from 'jotai';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useJobCounts, useJobs, useOverview, useWorkers } from '@/api/queries';
+import { useAtom, useSetAtom } from 'jotai';
+import { useJobCounts, useJobs, useOverview, useStats, useWorkers } from '@/api/queries';
 import { BlockError } from '@/components/block-error';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BulkBar } from '@/features/jobs/bulk-bar';
 import { Filters } from '@/features/jobs/filters';
 import { JobCards } from '@/features/jobs/job-cards';
 import { JobsTable } from '@/features/jobs/jobs-table';
+import { knownTypes } from '@/features/jobs/list';
+import { Pager } from '@/features/jobs/pager';
 import { JOBS_DEFAULTS, jobsSearchSchema, toJobsSearch, type JobsUrlSearch } from '@/features/jobs/search';
 import { StatusTabs } from '@/features/jobs/status-tabs';
-import { formatNumber } from '@/lib/format';
-import { selectedJobIdsAtom } from '@/lib/selection';
+import { selectedJobIdsAtom, visibleJobIdsAtom } from '@/lib/selection';
 import { useNow } from '@/lib/use-now';
 import { cn } from '@/lib/utils';
-
-const PAGE_SIZES = [25, 50, 100].map((n) => ({ value: String(n), label: `${n} / page` }));
 
 function JobsScreen() {
   const rawSearch = Route.useSearch();
@@ -32,18 +29,30 @@ function JobsScreen() {
   const counts = useJobCounts(apiSearch);
   const workers = useWorkers(true);
   const overview = useOverview();
+  const stats = useStats('7d');
   const [selected, setSelected] = useAtom(selectedJobIdsAtom);
+  const setVisibleIds = useSetAtom(visibleJobIdsAtom);
   const [selectMode, setSelectMode] = useState(false);
   const [resetKey, setResetKey] = useState(0);
-  const openId = Number(useMatch({ from: '/jobs/$jobId', shouldThrow: false })?.params.jobId) || undefined;
+  const detailMatch = useMatch({ from: '/jobs/$jobId', shouldThrow: false });
+  const openId = Number(detailMatch?.params.jobId) || undefined;
 
   const items = useMemo(() => jobs.data?.items ?? [], [jobs.data]);
   const workerMap = useMemo(() => new Map((workers.data ?? []).map((w) => [w.id, w])), [workers.data]);
   const typeOptions = useMemo(
-    () => [...new Set([...items.map((j) => j.type), ...(search.type ?? [])])].sort(),
-    [items, search.type],
+    () =>
+      knownTypes(
+        overview.data?.pendingByType.map((t) => t.type),
+        overview.data?.workers.flatMap((w) => w.running.map((r) => r.type)),
+        stats.data?.byType.map((t) => t.type),
+        items.map((j) => j.type),
+        search.type,
+      ),
+    [overview.data, stats.data, items, search.type],
   );
   const selectedJobs = items.filter((j) => selected.has(j.id));
+
+  useEffect(() => setVisibleIds(items.map((j) => j.id)), [items, setVisibleIds]);
 
   function setSearch(patch: Partial<JobsUrlSearch>) {
     setSelected(new Set());
@@ -72,10 +81,16 @@ function JobsScreen() {
     setSelectMode(!selectMode);
   }
 
-  const listProps = { jobs: items, now, p95: overview.data?.runP95ByType ?? {}, workers: workerMap, selected, openId };
+  const listProps = {
+    jobs: items,
+    now,
+    p95: overview.data?.runP95ByType ?? {},
+    workers: workerMap,
+    selected,
+    openId,
+    statusFilter: search.status,
+  };
   const total = jobs.data?.total ?? 0;
-  const from = (search.page - 1) * search.pageSize + 1;
-  const to = Math.min(from + items.length - 1, total);
   const filtered = !!(search.status || search.type || search.worker || search.q || search.created !== 'all');
 
   const lastPage = Math.max(1, Math.ceil(total / search.pageSize));
@@ -123,18 +138,20 @@ function JobsScreen() {
   } else {
     body = (
       <>
-        <div className="hidden md:block">
+        <div className="hidden @min-[44rem]:block">
           <JobsTable {...listProps} onToggle={toggle} onToggleAll={toggleAll} />
         </div>
-        <div className="p-2 md:hidden">
+        <div className="p-2 @min-[44rem]:hidden">
           <JobCards {...listProps} onToggle={toggle} selectMode={selectMode} />
         </div>
       </>
     );
   }
 
+  const bulk = selectedJobs.length > 0;
+
   return (
-    <>
+    <div data-fill-viewport className={cn('flex flex-col md:min-h-0 md:flex-1', detailMatch && 'lg:pr-[436px]')}>
       <PageHeader
         title="Jobs"
         actions={
@@ -148,7 +165,7 @@ function JobsScreen() {
           </Button>
         }
       />
-      <div className={cn('flex flex-col gap-3', selectedJobs.length > 0 && 'pb-32 md:pb-24')}>
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         <StatusTabs
           value={search.status?.length === 1 ? search.status[0] : undefined}
           counts={counts.data}
@@ -162,62 +179,37 @@ function JobsScreen() {
           onChange={setSearch}
         />
         {jobs.data && jobs.isError && (
-          <Card className="px-4">
+          <Card className="shrink-0 px-4">
             <BlockError message={jobs.error.message} lastGoodAt={jobs.dataUpdatedAt} onRetry={() => jobs.refetch()} />
           </Card>
         )}
-        <Card className="gap-0 overflow-hidden py-0">
-          {body}
-          {jobs.data && total > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
-              <span className="tabular-nums">
-                {formatNumber(from)}-{formatNumber(to)} / {formatNumber(total)}
-              </span>
-              <div className="flex items-center gap-1">
-                <Select
-                  items={PAGE_SIZES}
-                  value={String(search.pageSize)}
-                  onValueChange={(v) => v && setSearch({ pageSize: Number(v) as JobsUrlSearch['pageSize'] })}
-                >
-                  <SelectTrigger size="sm" aria-label="Page size" className="max-md:h-11">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    {PAGE_SIZES.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Previous page"
-                  disabled={search.page <= 1}
-                  onClick={() => setSearch({ page: search.page - 1 })}
-                  className="max-md:size-11"
-                >
-                  <ChevronLeft />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Next page"
-                  disabled={to >= total}
-                  onClick={() => setSearch({ page: search.page + 1 })}
-                  className="max-md:size-11"
-                >
-                  <ChevronRight />
-                </Button>
-              </div>
+        <Card className="@container min-h-0 flex-1 gap-0 overflow-clip py-0">
+          <div className="min-h-0 flex-1 md:overflow-auto">{body}</div>
+          {jobs.data && (bulk || total > 0) && (
+            <div
+              className={cn(
+                'flex items-center border-t bg-card px-3 py-2 @min-[44rem]:h-12 @min-[44rem]:py-0',
+                bulk && 'z-20 max-md:sticky max-md:bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))]',
+              )}
+            >
+              {bulk ? (
+                <BulkBar jobs={selectedJobs} onClear={() => setSelected(new Set())} />
+              ) : (
+                <Pager
+                  page={search.page}
+                  pageSize={search.pageSize}
+                  total={total}
+                  shown={items.length}
+                  onPage={(page) => setSearch({ page })}
+                  onPageSize={(pageSize) => setSearch({ pageSize })}
+                />
+              )}
             </div>
           )}
         </Card>
       </div>
-      {selectedJobs.length > 0 && <BulkBar jobs={selectedJobs} onClear={() => setSelected(new Set())} />}
       <Outlet />
-    </>
+    </div>
   );
 }
 
