@@ -8,12 +8,10 @@ function AttemptRow({
   attempt,
   durationMs,
   workerLabel,
-  now,
 }: {
   attempt: Attempt;
   durationMs: number | null;
   workerLabel?: string;
-  now: number;
 }) {
   return (
     <>
@@ -25,7 +23,7 @@ function AttemptRow({
         <StatusBadge status={attempt.outcome ?? 'running'} />
       </div>
       <p className="text-xs text-muted-foreground tabular-nums">
-        {formatClock(attempt.startedAt, now)}
+        {formatClock(attempt.startedAt)}
         {durationMs !== null && ` · ${formatDuration(durationMs)}`}
       </p>
       {attempt.error && <p className="mt-0.5 text-xs break-words text-bad">{attempt.error}</p>}
@@ -37,12 +35,10 @@ export function AttemptsTimeline({
   items,
   aside,
   workerLabels,
-  now,
 }: {
   items: TimelineItem[];
   aside: string;
   workerLabels: Map<string, string>;
-  now: number;
 }) {
   return (
     <section className="rounded-lg border bg-card px-3 py-2.5">
@@ -60,7 +56,7 @@ export function AttemptsTimeline({
                 className="relative flex items-center gap-1.5 text-xs text-muted-foreground before:absolute before:top-1.5 before:-left-[18px] before:size-3 before:rounded-full before:border-2 before:border-muted-foreground before:bg-card"
               >
                 <RotateCcw aria-hidden className="size-3" />
-                Requeued <span className="tabular-nums">{formatClock(item.at, now)}</span>
+                Requeued <span className="tabular-nums">{formatClock(item.at)}</span>
               </li>
             ) : (
               <li
@@ -71,7 +67,6 @@ export function AttemptsTimeline({
                   attempt={item.attempt}
                   durationMs={item.durationMs}
                   workerLabel={workerLabels.get(item.attempt.workerId)}
-                  now={now}
                 />
               </li>
             ),

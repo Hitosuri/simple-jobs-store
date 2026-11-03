@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { knownTypes, optionalColumns, parsePage, typeFilterLabel } from './list';
+import { knownTypes, optionalColumns, pageItems, typeFilterLabel } from './list';
 
 describe('knownTypes', () => {
   it('merges every source into one sorted list without duplicates', () => {
@@ -19,23 +19,20 @@ describe('typeFilterLabel', () => {
   });
 });
 
-describe('parsePage', () => {
-  it('accepts a page in range', () => {
-    expect(parsePage('3', 6)).toBe(3);
-    expect(parsePage(' 2 ', 6)).toBe(2);
+describe('pageItems', () => {
+  it('lists every page up to 7', () => {
+    expect(pageItems(1, 1)).toEqual([1]);
+    expect(pageItems(2, 3)).toEqual([1, 2, 3]);
+    expect(pageItems(4, 7)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(pageItems(1, 0)).toEqual([1]);
   });
 
-  it('clamps to the first and last page and rounds', () => {
-    expect(parsePage('0', 6)).toBe(1);
-    expect(parsePage('-4', 6)).toBe(1);
-    expect(parsePage('99', 6)).toBe(6);
-    expect(parsePage('2.6', 6)).toBe(3);
-    expect(parsePage('5', 0)).toBe(1);
-  });
-
-  it('rejects text that is not a number', () => {
-    expect(parsePage('', 6)).toBeNull();
-    expect(parsePage('abc', 6)).toBeNull();
+  it('keeps 7 slots near the start, the end and the middle', () => {
+    expect(pageItems(1, 20)).toEqual([1, 2, 3, 4, 5, 'gap', 20]);
+    expect(pageItems(4, 20)).toEqual([1, 2, 3, 4, 5, 'gap', 20]);
+    expect(pageItems(5, 20)).toEqual([1, 'gap', 4, 5, 6, 'gap', 20]);
+    expect(pageItems(17, 20)).toEqual([1, 'gap', 16, 17, 18, 19, 20]);
+    expect(pageItems(20, 20)).toEqual([1, 'gap', 16, 17, 18, 19, 20]);
   });
 });
 

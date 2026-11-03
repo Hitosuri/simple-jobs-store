@@ -50,11 +50,11 @@ export function layoutLanes(attempts: AttemptRow[], from: number, to: number): M
 }
 
 /** Hover text for a swimlane bar: type, job, outcome, start time and duration, one per line. */
-export function barTitle(bar: LaneBar, now: number): string {
+export function barTitle(bar: LaneBar): string {
   return [
     `${bar.type} #${bar.jobId}`,
     statusLabel(bar.outcome ?? 'running'),
-    `Started ${formatClock(bar.startedAt, now)}`,
+    `Started ${formatClock(bar.startedAt)}`,
     `${bar.outcome === null ? 'Running for' : 'Took'} ${formatDuration(bar.durationMs)}`,
   ].join('\n');
 }

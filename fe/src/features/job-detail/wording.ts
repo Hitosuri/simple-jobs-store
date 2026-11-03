@@ -40,9 +40,7 @@ export function retryNote(
   const which = `(attempt ${job.attemptsUsed + 1} of ${job.maxAttempt})`;
   const ready = Date.parse(job.availableAt);
   const next =
-    ready > now
-      ? `Retrying at ${formatClock(job.availableAt, now)} ${which}`
-      : `Retrying when a worker is free ${which}`;
+    ready > now ? `Retrying at ${formatClock(job.availableAt)} ${which}` : `Retrying when a worker is free ${which}`;
   return { lead, next };
 }
 
@@ -82,7 +80,7 @@ export function reportLines(
         tone: 'fg',
       };
     }
-    const clock = formatClock(at, now);
+    const clock = formatClock(at);
     return {
       url,
       text:

@@ -22,15 +22,15 @@ export function Facts({ job, now }: { job: Job; now: number }) {
 
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-lg border bg-card px-3 py-2.5 text-[13px]">
-      <Row label="Created" value={formatClock(job.createdAt, now)} />
+      <Row label="Created" value={formatClock(job.createdAt)} />
       {job.startedAt && (
         <Row
           label={job.status === 'pending' ? 'Last started' : 'Started'}
-          value={formatClock(job.startedAt, now)}
+          value={formatClock(job.startedAt)}
           note={job.status === 'pending' ? null : spanText('queued for', job.availableAt, job.startedAt)}
         />
       )}
-      {job.finishedAt && <Row label="Finished" value={formatClock(job.finishedAt, now)} />}
+      {job.finishedAt && <Row label="Finished" value={formatClock(job.finishedAt)} />}
       {leaseMs !== null && (
         <Row
           label="Lease"
@@ -42,7 +42,7 @@ export function Facts({ job, now }: { job: Job; now: number }) {
       {deadlineMs !== null && job.deadlineAt && (
         <Row
           label="Deadline"
-          value={formatClock(job.deadlineAt, now)}
+          value={formatClock(job.deadlineAt)}
           note={deadlineMs > 0 ? `in ${formatDuration(deadlineMs)}` : 'passed'}
           bad={deadlineMs <= 0}
         />

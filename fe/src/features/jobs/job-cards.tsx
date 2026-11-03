@@ -71,7 +71,7 @@ export function JobCards({
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate">
-                    <Started job={job} now={now} labelled />
+                    <Started job={job} labelled />
                   </span>
                   {jobDuration(job, now) && (
                     <span className="truncate">

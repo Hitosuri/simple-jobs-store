@@ -87,17 +87,17 @@ describe('layoutLanes', () => {
 describe('barTitle', () => {
   it('names type, job, outcome label, start and duration', () => {
     const [bar] = layoutLanes([attempt({ jobId: 7, outcome: 'lease_expired' })], FROM, TO).get('w1')!;
-    expect(barTitle(bar, FROM).split('\n')).toEqual([
+    expect(barTitle(bar).split('\n')).toEqual([
       't #7',
       'Lease expired',
-      expect.stringMatching(/^Started \d\d:\d\d:\d\d$/),
+      expect.stringMatching(/^Started [A-Z][a-z]{2} \d+, \d\d:\d\d:\d\d$/),
       'Took 20s',
     ]);
   });
 
   it('reads as running for an open attempt', () => {
     const [bar] = layoutLanes([attempt({ outcome: null, endedAt: null })], FROM, TO).get('w1')!;
-    expect(barTitle(bar, FROM).split('\n')).toEqual([
+    expect(barTitle(bar).split('\n')).toEqual([
       't #1',
       'Running',
       expect.stringMatching(/^Started /),

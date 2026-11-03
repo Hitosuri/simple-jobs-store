@@ -9,11 +9,11 @@ import { barTitle, type LaneBar } from './lanes';
 
 const clock = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
-const ROW = 'grid grid-cols-[160px_1fr] md:grid-cols-[200px_1fr]';
+const ROW = 'grid grid-cols-[180px_1fr] md:grid-cols-[248px_1fr]';
 const GRID = 'bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px)] bg-[length:25%_100%]';
 
-function Bar({ bar, now }: { bar: LaneBar; now: number }) {
-  const title = barTitle(bar, now);
+function Bar({ bar }: { bar: LaneBar }) {
+  const title = barTitle(bar);
   return (
     <Link
       to="/jobs/$jobId"
@@ -37,28 +37,25 @@ function Bar({ bar, now }: { bar: LaneBar; now: number }) {
 }
 
 function WorkerLabel({ worker, label, busy, now }: { worker: Worker; label: string; busy: number; now: number }) {
-  const suffix = label === worker.name ? null : label.slice(worker.name.length + 3);
-  const state = worker.connected
-    ? `${busy}/${worker.concurrentLimit} busy`
-    : `last seen ${formatAgo(worker.lastSeenAt, now)}`;
+  const state = worker.connected ? `${busy}/${worker.concurrentLimit}` : formatAgo(worker.lastSeenAt, now);
   const dot = !worker.connected ? 'bg-bad' : busy > 0 ? 'bg-ok' : 'bg-muted-foreground';
+  const suffix = label === worker.name ? null : label.slice(worker.name.length + 3);
   return (
     <Link
       from="/machines"
       to="/machines/$workerId"
       params={{ workerId: worker.id }}
       search={(prev) => prev}
-      title={label}
-      className="sticky left-0 z-10 flex min-h-11 items-center gap-1.5 bg-card py-1 pr-2 hover:bg-inset md:min-h-9"
+      title={worker.connected ? `${label} - ${state} slots busy` : `${label} - last seen ${state}`}
+      className="sticky left-0 z-10 flex min-h-11 items-center gap-2 bg-card pr-3 text-[13px] hover:bg-inset md:min-h-9"
     >
       <span aria-hidden className={cn('size-[7px] shrink-0 rounded-full', dot)} />
-      <span className="min-w-0 leading-4">
-        <span className="block truncate text-[13px]">{worker.name}</span>
-        <span className="block truncate text-xs text-muted-foreground tabular-nums">
-          {suffix ? `${suffix} · ${state}` : state}
-        </span>
+      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span className="truncate">{worker.name}</span>
+        {suffix && <span className="shrink-0 text-xs text-muted-foreground">{suffix}</span>}
       </span>
-      <span className="sr-only">{worker.connected ? 'online' : 'offline'}</span>
+      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{state}</span>
+      <span className="sr-only">{worker.connected ? 'slots busy, online' : 'last seen, offline'}</span>
     </Link>
   );
 }
@@ -79,7 +76,6 @@ export function Swimlane({
   now: number;
 }) {
   const types = [...new Set([...lanes.values()].flatMap((bars) => bars.map((b) => b.type)))].sort();
-  const labels = workerLabels(groups.flatMap((g) => g.workers));
   const scroller = useRef<HTMLDivElement>(null);
   const span = to - from;
   useLayoutEffect(() => {
@@ -102,11 +98,12 @@ export function Swimlane({
             const live = workers.filter((w) => w.connected);
             const total = live.reduce((n, w) => n + w.concurrentLimit, 0);
             const used = live.reduce((n, w) => n + (busy.get(w.id) ?? 0), 0);
+            const labels = workerLabels(workers);
             return (
-              <div key={ip}>
+              <div key={ip} className="pb-1">
                 <div className={cn(ROW, 'border-t border-border')}>
-                  <div className="sticky left-0 z-10 flex items-baseline justify-between gap-2 bg-card pt-2 pr-2 pb-1 text-xs tabular-nums">
-                    <span className="truncate font-semibold">{ip}</span>
+                  <div className="sticky left-0 z-10 flex items-baseline justify-between gap-2 bg-card pt-3 pr-3 pb-1.5 text-xs tabular-nums">
+                    <span className="truncate font-semibold text-foreground">{ip}</span>
                     <span className="shrink-0 text-muted-foreground">
                       {live.length > 0 ? `${used}/${total} slots busy` : 'offline'}
                     </span>
@@ -119,7 +116,7 @@ export function Swimlane({
                     <div className={cn('flex items-center', GRID)}>
                       <div className="relative h-6 w-full overflow-hidden">
                         {lanes.get(w.id)?.map((bar) => (
-                          <Bar key={`${bar.jobId}-${bar.attemptNo}`} bar={bar} now={now} />
+                          <Bar key={`${bar.jobId}-${bar.attemptNo}`} bar={bar} />
                         ))}
                       </div>
                     </div>

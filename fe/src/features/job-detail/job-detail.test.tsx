@@ -146,7 +146,7 @@ describe('DetailBody', () => {
     it('leads with the failed attempt and when it retries', () => {
       const html = renderRetry();
       expect(html).toContain('Attempt 1 failed: KeyError: &#x27;recipient&#x27;');
-      expect(html).toMatch(/Retrying at [\d:]+ \(attempt 2 of 3\)/);
+      expect(html).toMatch(/Retrying at [A-Z][a-z]{2} \d+, [\d:]+ \(attempt 2 of 3\)/);
     });
 
     it('opens the Error block and marks old progress as the last attempt', () => {

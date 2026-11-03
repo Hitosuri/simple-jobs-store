@@ -22,24 +22,18 @@ export function formatPercent(ratio: number | null, digits = 1): string {
   return `${(ratio * 100).toFixed(digits)}%`;
 }
 
-const timeOfDay = new Intl.DateTimeFormat('en-US', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23',
-});
 const dayAndTime = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
+  second: '2-digit',
   hourCycle: 'h23',
 });
 
-/** Wall-clock time, with the date only when it is not today. */
-export function formatClock(iso: string, now: number): string {
-  const at = new Date(iso);
-  return at.toDateString() === new Date(now).toDateString() ? timeOfDay.format(at) : dayAndTime.format(at);
+/** Wall-clock time, always with the date ("Nov 3, 14:34:22"), so rows from different days read alike. */
+export function formatClock(iso: string): string {
+  return dayAndTime.format(new Date(iso));
 }
 
 export function formatAgo(iso: string, now: number): string {

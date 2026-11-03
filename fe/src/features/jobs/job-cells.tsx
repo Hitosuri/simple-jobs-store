@@ -96,21 +96,13 @@ export function currentStep(job: Pick<Job, 'status' | 'progress'>): ProgressStep
   return undefined;
 }
 
-const fullTime = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'medium', hourCycle: 'h23' });
-
-export function Started({ job, now, labelled }: { job: Job; now: number; labelled?: boolean }) {
-  const at = job.startedAt && job.status !== 'pending' ? job.startedAt : null;
-  if (at)
-    return (
-      <span title={fullTime.format(new Date(at))}>
-        {labelled && 'started '}
-        {formatClock(at, now)}
-      </span>
-    );
-  if (job.status !== 'pending') return <span className="text-muted-foreground">not started</span>;
+/** Start time of the current run; nothing for a job that is not running or has not run. */
+export function Started({ job, labelled }: { job: Job; labelled?: boolean }) {
+  if (!job.startedAt || job.status === 'pending') return null;
   return (
-    <span title={fullTime.format(new Date(job.createdAt))} className="text-muted-foreground">
-      queued {formatClock(job.createdAt, now)}
+    <span>
+      {labelled && 'started '}
+      {formatClock(job.startedAt)}
     </span>
   );
 }

@@ -11,11 +11,16 @@ export function typeFilterLabel(selected: readonly string[]): string {
   return selected.length === 1 ? selected[0] : `${selected[0]} +${selected.length - 1}`;
 }
 
-/** Page number typed into the pager, clamped to 1..last; null when the text is not a number. */
-export function parsePage(text: string, last: number): number | null {
-  const n = Number(text);
-  if (text.trim() === '' || !Number.isFinite(n)) return null;
-  return Math.min(Math.max(Math.round(n), 1), Math.max(last, 1));
+/**
+ * Page buttons for the pager: always the first and last page, the current one with its neighbours,
+ * and `'gap'` for skipped runs. Past 7 pages it is always 7 slots, so the pager does not change width.
+ */
+export function pageItems(page: number, last: number): (number | 'gap')[] {
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+  if (last <= 7) return range(1, Math.max(last, 1));
+  if (page <= 4) return [...range(1, 5), 'gap', last];
+  if (page >= last - 3) return [1, 'gap', ...range(last - 4, last)];
+  return [1, 'gap', page - 1, page, page + 1, 'gap', last];
 }
 
 /** Columns that only earn their space in some states: Status is redundant under a single-status tab. */

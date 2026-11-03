@@ -53,16 +53,16 @@ export function JobsTable({
             />
           </TableHead>
           <TableHead className={cn(HEAD, AT_68, 'w-16 text-right')}>ID</TableHead>
-          <TableHead className={cn(HEAD, AT_68, 'w-48')}>Type</TableHead>
-          <TableHead className={cn(HEAD, BELOW_68, 'w-36')}>Job</TableHead>
-          {show.status && <TableHead className={cn(HEAD, 'w-28')}>Status</TableHead>}
-          <TableHead className={cn(HEAD, AT_60, 'w-36')}>Worker</TableHead>
-          <TableHead className={cn(HEAD, 'w-32')}>Started</TableHead>
+          <TableHead className={cn(HEAD, AT_68, 'w-[22%] pl-4')}>Type</TableHead>
+          <TableHead className={cn(HEAD, BELOW_68)}>Job</TableHead>
+          {show.status && <TableHead className={cn(HEAD, 'w-32')}>Status</TableHead>}
+          <TableHead className={cn(HEAD, AT_60)}>Worker</TableHead>
+          <TableHead className={cn(HEAD, 'w-40')}>Started</TableHead>
           <TableHead className={cn(HEAD, 'w-28 text-right')}>Duration</TableHead>
-          <TableHead className={HEAD}>Progress</TableHead>
+          <TableHead className={cn(HEAD, 'w-40 pl-6 @min-[68rem]:w-56')}>Progress</TableHead>
           <TableHead className={cn(HEAD, AT_52, 'w-20 text-right')}>Attempts</TableHead>
           {show.priority && <TableHead className={cn(HEAD, AT_52, 'w-16 text-right')}>Priority</TableHead>}
-          <TableHead className={cn(HEAD, 'w-28 pr-3')}>
+          <TableHead className={cn(HEAD, 'w-20 pr-3')}>
             <span className="sr-only">Actions</span>
           </TableHead>
         </TableRow>
@@ -93,7 +93,7 @@ export function JobsTable({
               <TableCell className={cn(AT_68, 'text-right')}>
                 <OpenLink id={job.id} />
               </TableCell>
-              <TableCell className={AT_68}>
+              <TableCell className={cn(AT_68, 'pl-4')}>
                 <div className="flex">
                   <TypeChip type={job.type} />
                 </div>
@@ -118,12 +118,12 @@ export function JobsTable({
                 )}
               </TableCell>
               <TableCell className="truncate">
-                <Started job={job} now={now} />
+                <Started job={job} />
               </TableCell>
               <TableCell className="truncate text-right">
                 <Duration job={job} now={now} p95={p95} />
               </TableCell>
-              <TableCell>
+              <TableCell className="pl-6">
                 <Progress job={job} />
                 <ErrorLine job={job} />
               </TableCell>

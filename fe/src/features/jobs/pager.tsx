@@ -1,9 +1,10 @@
-import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatNumber } from '@/lib/format';
-import { parsePage } from './list';
+import { cn } from '@/lib/utils';
+import { pageItems } from './list';
 import type { JobsUrlSearch } from './search';
 
 const PAGE_SIZES = [25, 50, 100].map((n) => ({ value: String(n), label: `${n} / page` }));
@@ -29,22 +30,16 @@ export function Pager({
   const from = (page - 1) * pageSize + 1;
   const to = Math.min(from + shown - 1, total);
 
-  function commit(input: HTMLInputElement) {
-    const next = parsePage(input.value, last);
-    if (next !== null && next !== page) onPage(next);
-    else input.value = String(page);
-  }
-
-  const step = (label: string, target: number, Icon: typeof ChevronLeft) => (
+  const step = (label: string, target: number, icon: ReactNode) => (
     <Button
-      variant="outline"
-      size="icon"
+      variant="ghost"
+      size="icon-sm"
       aria-label={label}
-      disabled={target < 1 || target > last || target === page}
+      disabled={target < 1 || target > last}
       onClick={() => onPage(target)}
       className="max-md:size-11"
     >
-      <Icon />
+      {icon}
     </Button>
   );
 
@@ -71,27 +66,37 @@ export function Pager({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-center gap-1">
-        {step('First page', 1, ChevronFirst)}
-        {step('Previous page', page - 1, ChevronLeft)}
-        <label className="flex items-center gap-1.5 px-1.5">
-          Page
-          <Input
-            key={page}
-            type="text"
-            inputMode="numeric"
-            aria-label={`Page number, 1 to ${last}`}
-            defaultValue={page}
-            onBlur={(e) => commit(e.currentTarget)}
-            onKeyDown={(e) => e.key === 'Enter' && commit(e.currentTarget)}
-            onFocus={(e) => e.currentTarget.select()}
-            className="w-12 text-center tabular-nums max-md:h-11"
-          />
-          of {formatNumber(last)}
-        </label>
-        {step('Next page', page + 1, ChevronRight)}
-        {step('Last page', last, ChevronLast)}
-      </div>
+      {last > 1 && (
+        <nav aria-label="Pages" className="flex items-center gap-0.5">
+          {step('Previous page', page - 1, <ChevronLeft />)}
+          <span className="px-2 text-foreground md:hidden">
+            {formatNumber(page)} / {formatNumber(last)}
+          </span>
+          {pageItems(page, last).map((item, i) =>
+            item === 'gap' ? (
+              <span key={`gap-${i}`} aria-hidden className="hidden w-7 text-center md:block">
+                ...
+              </span>
+            ) : (
+              <Button
+                key={item}
+                variant={item === page ? 'outline' : 'ghost'}
+                size="sm"
+                aria-label={`Page ${item}`}
+                aria-current={item === page ? 'page' : undefined}
+                onClick={() => item !== page && onPage(item)}
+                className={cn(
+                  'hidden min-w-7 px-1.5 tabular-nums md:inline-flex',
+                  item === page ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {item}
+              </Button>
+            ),
+          )}
+          {step('Next page', page + 1, <ChevronRight />)}
+        </nav>
+      )}
     </div>
   );
 }

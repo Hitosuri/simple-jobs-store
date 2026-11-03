@@ -49,7 +49,7 @@ describe('retryNote', () => {
   it('leads with the failed attempt and the retry time', () => {
     expect(retryNote(pending, [attempt(1, 'failed', "KeyError: 'x'")], now)).toEqual({
       lead: "Attempt 1 failed: KeyError: 'x'",
-      next: 'Retrying at 12:25:00 (attempt 2 of 3)',
+      next: 'Retrying at Nov 3, 12:25:00 (attempt 2 of 3)',
     });
   });
 
@@ -118,18 +118,18 @@ describe('reportLines', () => {
     expect(texts({ reportStatus: 'pending', reportNextAt: iso(12, 20) })).toEqual(['Sending soon', 'Not tried yet']);
     expect(texts({ reportStatus: 'pending', reportCursor: 1, reportNextAt: iso(12, 25) })).toEqual([
       'Failed once',
-      'Waiting to send at 12:25:00',
+      'Waiting to send at Nov 3, 12:25:00',
     ]);
   });
 
   it('counts retries per target across rounds', () => {
     expect(texts({ reportStatus: 'pending', reportRound: 1, reportNextAt: iso(12, 25) })).toEqual([
-      'Waiting to retry at 12:25:00 (attempt 2)',
+      'Waiting to retry at Nov 3, 12:25:00 (attempt 2)',
       'Failed once',
     ]);
     expect(texts({ reportStatus: 'pending', reportRound: 2, reportCursor: 1, reportNextAt: iso(12, 25) })).toEqual([
       'Failed 3 times',
-      'Waiting to retry at 12:25:00 (attempt 3)',
+      'Waiting to retry at Nov 3, 12:25:00 (attempt 3)',
     ]);
   });
 

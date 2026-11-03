@@ -30,7 +30,7 @@ function JobPreview({ job, worker, now }: { job: RunningJob; worker: string; now
         <Fact label="Worker">
           <span className="block truncate">{worker}</span>
         </Fact>
-        <Fact label="Started">{formatClock(job.startedAt, now)}</Fact>
+        <Fact label="Started">{formatClock(job.startedAt)}</Fact>
         <Fact label="Running for">{formatDuration(now - Date.parse(job.startedAt))}</Fact>
         {job.progressPercent !== null && <Fact label="Progress">{Math.round(job.progressPercent)}%</Fact>}
         {step && (

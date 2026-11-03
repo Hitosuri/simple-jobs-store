@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { ConfirmCancel } from './confirm-cancel';
 import { ConfirmDelete } from './confirm-delete';
@@ -84,15 +85,38 @@ export function JobActions({
   }
 
   return (
-    <div className={cn('flex items-center', row ? 'justify-end gap-1' : 'gap-2')} onClick={(e) => e.stopPropagation()}>
-      {primary && (
+    <div
+      className={cn('flex items-center', row ? 'justify-end gap-0.5' : 'gap-2')}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {row &&
+        (primary ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={busy}
+                  onClick={() => run(primary)}
+                  aria-label={`${META[primary].label} job ${job.id}`}
+                  className="text-muted-foreground hover:text-foreground max-md:size-11"
+                />
+              }
+            >
+              {META[primary].icon}
+            </TooltipTrigger>
+            <TooltipContent>{META[primary].label}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <span aria-hidden className="size-7 shrink-0 max-md:size-11" />
+        ))}
+      {!row && primary && (
         <Button
-          variant={row ? 'outline' : primary === 'retry' ? 'default' : 'outline'}
-          size={row ? 'xs' : 'default'}
+          variant={primary === 'retry' ? 'default' : 'outline'}
           disabled={busy}
           onClick={() => run(primary)}
-          aria-label={row ? `${META[primary].label} job ${job.id}` : undefined}
-          className={cn(row ? 'max-md:h-11 max-md:px-3' : 'flex-1 max-md:h-11')}
+          className="flex-1 max-md:h-11"
         >
           {META[primary].icon}
           {META[primary].label}
@@ -104,10 +128,10 @@ export function JobActions({
             render={
               <Button
                 variant={row ? 'ghost' : 'outline'}
-                size={row ? 'icon-xs' : 'icon'}
+                size={row ? 'icon-sm' : 'icon'}
                 aria-label={`More actions for job ${job.id}`}
                 disabled={busy}
-                className="max-md:size-11"
+                className={cn(row && 'text-muted-foreground hover:text-foreground', 'max-md:size-11')}
               />
             }
           >
@@ -133,7 +157,7 @@ export function JobActions({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      {row && rest.length === 0 && <span aria-hidden className="size-6 shrink-0 max-md:size-11" />}
+      {row && rest.length === 0 && <span aria-hidden className="size-7 shrink-0 max-md:size-11" />}
 
       <ConfirmDelete
         count={1}

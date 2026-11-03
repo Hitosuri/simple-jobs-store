@@ -67,12 +67,7 @@ function Loaded({ data, onClose }: { data: JobDetailData; onClose: () => void })
         <Facts job={job} now={now} />
         {errorFirst && errorBlock}
         {job.progress && job.progress.length > 0 && <ProgressCard steps={job.progress} jobStatus={job.status} />}
-        <AttemptsTimeline
-          items={items}
-          aside={`${attemptsShown(job)} of ${job.maxAttempt}`}
-          workerLabels={labels}
-          now={now}
-        />
+        <AttemptsTimeline items={items} aside={`${attemptsShown(job)} of ${job.maxAttempt}`} workerLabels={labels} />
         <JsonBlock title="Description" value={job.description} />
         {job.result !== null && <JsonBlock title="Result" value={job.result} />}
         {!errorFirst && errorBlock}

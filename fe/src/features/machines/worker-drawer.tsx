@@ -107,7 +107,7 @@ function RecentAttempts({ recent, now }: { recent: AttemptRow[]; now: number }) 
               <StatusBadge status={a.outcome ?? 'running'} />
             </div>
             <p className="text-xs text-muted-foreground tabular-nums">
-              {formatClock(a.startedAt, now)}
+              {formatClock(a.startedAt)}
               {end !== null && ` · ${formatDuration(end - Date.parse(a.startedAt))}`}
             </p>
           </li>
@@ -137,7 +137,7 @@ function Loaded({ worker, onClose }: { worker: Worker; onClose: () => void }) {
             {worker.connected && (
               <>
                 <dt className="text-muted-foreground">Up since</dt>
-                <dd className="tabular-nums">{formatClock(worker.connectedAt, now)}</dd>
+                <dd className="tabular-nums">{formatClock(worker.connectedAt)}</dd>
               </>
             )}
             <dt className="text-muted-foreground">Heartbeat</dt>
