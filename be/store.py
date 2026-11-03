@@ -432,7 +432,12 @@ def _where(query: JobQuery, *, with_statuses: bool) -> tuple[str, dict[str, obje
         )
         params["worker"] = query.worker_id
     if query.q:
-        like = "description LIKE '%' || :q || '%' ESCAPE '\\'"
+        like = (
+            "(description LIKE '%' || :q || '%' ESCAPE '\\'"
+            " OR error LIKE '%' || :q || '%' ESCAPE '\\'"
+            " OR EXISTS (SELECT 1 FROM job_attempts a WHERE a.job_id = jobs.id"
+            " AND COALESCE(a.error, a.outcome) LIKE '%' || :q || '%' ESCAPE '\\'))"
+        )
         params["q"] = _like_escape(query.q)
         if (
             query.q.isascii()

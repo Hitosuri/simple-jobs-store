@@ -607,6 +607,28 @@ def test_list_jobs_q_digits_also_matches_id(client: TestClient) -> None:
     assert ids(client, "q=12") == [jobs[11]["id"]]
 
 
+def test_list_jobs_q_matches_attempt_error(client: TestClient) -> None:
+    register(client)
+    retried = create(client, maxAttempt=2)
+    create(client)
+    claimed = claim(client)
+    body = {**lease_body(claimed), "status": "failed", "error": "ConvertError: no points"}
+    client.post(f"/api/jobs/{retried['id']}/finish", json=body)
+    assert ids(client, "q=no points") == [retried["id"]]
+
+
+def test_list_jobs_q_matches_attempt_outcome_without_error(
+    client: TestClient, conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    register(client)
+    expired = create(client, maxAttempt=2)
+    create(client)
+    claim(client)
+    clock.advance(10 * 60_000)
+    store.cleanup(conn, now=clock.now, settings=settings)
+    assert ids(client, "q=lease_expired") == [expired["id"]]
+
+
 def test_list_jobs_q_huge_digit_string_does_not_crash(client: TestClient) -> None:
     create(client)
     assert ids(client, f"q={'9' * 5000}") == []
