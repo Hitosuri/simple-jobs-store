@@ -22,10 +22,12 @@ function detail(s: ProgressStep, shown: ShownStepStatus): string {
 }
 
 export function ProgressCard({ steps, jobStatus }: { steps: ProgressStep[]; jobStatus: JobStatus }) {
+  const lastAttempt = jobStatus === 'pending';
   return (
-    <section className="rounded-lg border bg-card px-3 py-2.5">
+    <section className={cn('rounded-lg border bg-card px-3 py-2.5', lastAttempt && 'text-muted-foreground')}>
       <h3 className="mb-2 flex justify-between text-[13px] font-semibold">
-        Progress <span className="text-xs font-normal text-muted-foreground tabular-nums">{steps.length} steps</span>
+        {lastAttempt ? 'Last attempt progress' : 'Progress'}
+        <span className="text-xs font-normal text-muted-foreground tabular-nums">{steps.length} steps</span>
       </h3>
       <ul className="flex flex-col gap-2.5">
         {steps.map((s) => {

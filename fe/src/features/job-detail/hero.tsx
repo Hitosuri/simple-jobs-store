@@ -1,10 +1,10 @@
 import type { Job, JobStatus } from '@/api/types';
 import { StatusBadge } from '@/components/status-badge';
 import { elapsedTone, toneClass } from '@/features/overview/thresholds';
-import { jobProgress, shownStepStatus, type ShownStepStatus } from '@/features/jobs/job-cells';
 import { formatDuration } from '@/lib/format';
 import { typeColorVar } from '@/lib/type-color';
 import { cn } from '@/lib/utils';
+import { errorText, heroElapsed } from './wording';
 
 const TONE: Record<JobStatus, string> = {
   pending: 'var(--muted-foreground)',
@@ -14,32 +14,21 @@ const TONE: Record<JobStatus, string> = {
   cancelled: 'var(--muted-foreground)',
 };
 
-const BAR: Record<ShownStepStatus, string> = {
-  pending: 'bg-ok',
-  running: 'bg-run',
-  stopped: 'bg-muted-foreground',
-  done: 'bg-ok',
-  failed: 'bg-bad',
-  skipped: 'bg-ok',
-};
-
-function elapsedOf(job: Job, now: number): { ms: number | null; label: string } {
-  if (job.status === 'running' && job.startedAt) return { ms: now - Date.parse(job.startedAt), label: 'running' };
-  if (job.status === 'pending') return { ms: now - Date.parse(job.availableAt), label: 'waiting' };
-  if (job.startedAt && job.finishedAt) {
-    return { ms: Date.parse(job.finishedAt) - Date.parse(job.startedAt), label: 'ran for' };
-  }
-  return { ms: null, label: 'never started' };
-}
-
-export function Hero({ job, now, p95 }: { job: Job; now: number; p95?: number }) {
-  const { ms, label } = elapsedOf(job, now);
+export function Hero({
+  job,
+  now,
+  p95,
+  retry,
+}: {
+  job: Job;
+  now: number;
+  p95?: number;
+  retry: { lead: string; next: string } | null;
+}) {
+  const { ms, label } = heroElapsed(job, now);
   const slow = job.status === 'running' && ms !== null && elapsedTone(ms, p95) === 'warn';
-  const steps = job.progress ?? [];
-  const pct = jobProgress(job);
-  const doneSteps = steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
   const tone = TONE[job.status];
-  const failedWith = job.status === 'failed' ? job.error : null;
+  const lead = retry?.lead ?? (job.status === 'failed' && job.error ? errorText(job.error) : null);
 
   return (
     <section
@@ -49,48 +38,30 @@ export function Hero({ job, now, p95 }: { job: Job; now: number; p95?: number })
         background: `radial-gradient(130% 90% at 0% 0%, color-mix(in oklab, ${tone} 22%, transparent), transparent 65%), var(--card)`,
       }}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground tabular-nums">#{job.id}</span>
-        <span className="ml-auto">
+      <div className="flex items-start gap-2 text-base font-semibold">
+        <span className="flex min-w-0 items-start gap-1.5" style={{ color: typeColorVar(job.type) }}>
+          <span aria-hidden className="mt-1 h-4 w-1 shrink-0 rounded-[1px] bg-current" />
+          <span className="min-w-0 break-all text-foreground">{job.type}</span>
+        </span>
+        <span className="ml-auto shrink-0">
           <StatusBadge status={job.status} />
         </span>
       </div>
-      <div className="mt-1 flex items-start gap-1.5 font-semibold" style={{ color: typeColorVar(job.type) }}>
-        <span aria-hidden className="mt-0.5 h-4 w-1 shrink-0 rounded-[1px] bg-current" />
-        <span className="min-w-0 text-base break-all text-foreground">{job.type}</span>
-      </div>
-      {failedWith && <p className="mt-2 line-clamp-3 text-sm font-medium break-words text-foreground">{failedWith}</p>}
-      <p
-        className={cn(
-          'mt-2.5 leading-none font-semibold tracking-tight tabular-nums',
-          failedWith ? 'text-xl' : 'text-[32px]',
-          toneClass[slow ? 'warn' : 'fg'],
-        )}
-      >
-        {ms === null ? '-' : formatDuration(ms)}
-      </p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {label}
-        {slow && ` · slower than 95% of ${job.type} jobs`}
-      </p>
-      {steps.length > 0 && (
-        <>
-          <div className="mt-3 flex gap-0.5" role="img" aria-label={`Overall progress ${pct ?? 0}%`}>
-            {steps.map((s) => {
-              const shown = shownStepStatus(s.status, job.status);
-              const fill = shown === 'done' || shown === 'skipped' || shown === 'failed' ? 100 : (s.percent ?? 0);
-              return (
-                <span key={s.id} className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-inset">
-                  <span className={cn('block h-full', BAR[shown])} style={{ width: `${fill}%` }} />
-                </span>
-              );
-            })}
-          </div>
-          <p className="mt-1.5 text-xs text-muted-foreground tabular-nums">
-            {doneSteps}/{steps.length} steps &middot; {pct ?? 0}%
-          </p>
-        </>
+      {lead && <p className="mt-2 line-clamp-3 text-sm font-medium break-words text-foreground">{lead}</p>}
+      {retry && <p className="mt-1 text-xs text-muted-foreground tabular-nums">{retry.next}</p>}
+      <p className="mt-3 text-xs text-muted-foreground">{label}</p>
+      {ms !== null && (
+        <p
+          className={cn(
+            'mt-1 leading-none font-semibold tracking-tight tabular-nums',
+            lead ? 'text-xl' : 'text-[32px]',
+            toneClass[slow ? 'warn' : 'fg'],
+          )}
+        >
+          {formatDuration(ms)}
+        </p>
       )}
+      {slow && <p className="mt-1 text-xs text-warn">Slower than 95% of {job.type} jobs</p>}
     </section>
   );
 }

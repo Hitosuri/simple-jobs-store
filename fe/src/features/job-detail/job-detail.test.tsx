@@ -92,13 +92,18 @@ describe('DetailBody', () => {
       const html = renderFailed();
       const hero = html.indexOf('KeyError: &#x27;recipient&#x27;');
       expect(hero).toBeGreaterThan(-1);
-      expect(hero).toBeLessThan(html.indexOf('ran for'));
+      expect(hero).toBeLessThan(html.indexOf('Ran for'));
     });
 
     it('opens the Error block above Progress', () => {
       const html = renderFailed();
-      expect(html).toMatch(/<details[^>]*open[^>]*>\s*<summary[^>]*>Error/);
-      expect(html.indexOf('>Error<')).toBeLessThan(html.indexOf('>Progress'));
+      expect(html).toMatch(/aria-expanded="true"[^>]*>(?:(?!<\/button>).)*Error/s);
+      expect(html).toContain('Traceback (most recent call last)');
+      expect(html.indexOf('Traceback')).toBeLessThan(html.indexOf('>Progress'));
+    });
+
+    it('hides the callback card when the job has no callbacks', () => {
+      expect(renderFailed()).not.toContain('Callback');
     });
 
     it('shows a stale running step as stopped, not spinning', () => {
@@ -110,6 +115,50 @@ describe('DetailBody', () => {
     it('makes Retry the primary action', () => {
       const html = renderFailed();
       expect(html).toMatch(/<button[^>]*bg-primary[^>]*>(?:(?!<\/button>).)*Retry<\/button>/s);
+    });
+  });
+
+  describe('pending job retrying after a failed attempt', () => {
+    const renderRetry = () => {
+      const job = {
+        ...failedJob,
+        status: 'pending',
+        attemptsUsed: 1,
+        availableAt: new Date(Date.now() + 60_000).toISOString(),
+        finishedAt: null,
+        reports: [{ type: 'callback', config: { url: 'https://a.example/' } }],
+      };
+      const attempts = [
+        {
+          attemptNo: 1,
+          workerId: 'batch-02',
+          outcome: 'failed',
+          error: "KeyError: 'recipient'",
+          errorDetail: null,
+          startedAt: '2026-11-02T09:00:01Z',
+          endedAt: '2026-11-02T09:00:04Z',
+        },
+      ];
+      useJob.mockReturnValue({ data: { job, attempts }, isError: false });
+      return render('8');
+    };
+
+    it('leads with the failed attempt and when it retries', () => {
+      const html = renderRetry();
+      expect(html).toContain('Attempt 1 failed: KeyError: &#x27;recipient&#x27;');
+      expect(html).toMatch(/Retrying at [\d:]+ \(attempt 2 of 3\)/);
+    });
+
+    it('opens the Error block and marks old progress as the last attempt', () => {
+      const html = renderRetry();
+      expect(html).toMatch(/aria-expanded="true"[^>]*>(?:(?!<\/button>).)*Error/s);
+      expect(html).toContain('Last attempt progress');
+    });
+
+    it('shows the callback waiting for the job to finish', () => {
+      const html = renderRetry();
+      expect(html).toContain('>Callback<');
+      expect(html).toContain('Sent when the job finishes');
     });
   });
 });

@@ -1,65 +1,53 @@
-import type { Attempt, Job, Worker } from '@/api/types';
-import { toneClass, type Tone } from '@/features/overview/thresholds';
-import { attemptsShown } from '@/features/jobs/job-cells';
-import { formatDuration } from '@/lib/format';
-import { formatDateTime } from './timeline';
+import type { Job } from '@/api/types';
+import { formatClock, formatDuration } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { spanText } from './wording';
 
-function Tile({ label, value, sub, tone = 'fg' }: { label: string; value: string; sub?: string; tone?: Tone }) {
+function Row({ label, value, note, bad }: { label: string; value: string; note?: string | null; bad?: boolean }) {
   return (
-    <div className="min-w-0 rounded-lg border bg-card px-3 py-2.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`mt-0.5 text-sm font-semibold break-all tabular-nums ${toneClass[tone]}`}>{value}</p>
-      {sub && <p className="text-xs break-all text-muted-foreground tabular-nums">{sub}</p>}
-    </div>
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 tabular-nums">
+        <span className={cn(bad && 'text-bad')}>{value}</span>
+        {note && <span className="ml-1.5 text-muted-foreground">{note}</span>}
+      </dd>
+    </>
   );
 }
 
-export function Facts({
-  job,
-  attempts,
-  worker,
-  workerLabel,
-  now,
-}: {
-  job: Job;
-  attempts: Attempt[];
-  worker?: Worker;
-  workerLabel?: string;
-  now: number;
-}) {
-  const workerId = job.workerId ?? job.lastWorkerId;
-  const unsuccessful = attempts.filter((a) => a.outcome !== null && a.outcome !== 'succeeded').length;
-  const leaseLeft = job.status === 'running' && job.leaseUntil ? Date.parse(job.leaseUntil) - now : null;
-  const deadlineLeft = job.status === 'running' && job.deadlineAt ? Date.parse(job.deadlineAt) - now : null;
+export function Facts({ job, now }: { job: Job; now: number }) {
+  const running = job.status === 'running';
+  const leaseMs = running && job.leaseUntil ? Date.parse(job.leaseUntil) - now : null;
+  const deadlineMs = running && job.deadlineAt ? Date.parse(job.deadlineAt) - now : null;
 
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <Tile label={job.workerId ? 'Worker' : 'Last worker'} value={workerLabel ?? workerId ?? '-'} sub={worker?.ip} />
-      <Tile
-        label="Lease"
-        value={leaseLeft === null ? '-' : leaseLeft > 0 ? formatDuration(leaseLeft) : 'expired'}
-        sub={leaseLeft === null ? undefined : 'remaining'}
-        tone={leaseLeft !== null && leaseLeft <= 0 ? 'bad' : 'fg'}
-      />
-      <Tile
-        label="Attempts"
-        value={`${attemptsShown(job)} /${job.maxAttempt}`}
-        sub={unsuccessful > 0 ? `${unsuccessful} unsuccessful` : undefined}
-      />
-      <Tile
-        label="Deadline"
-        value={
-          deadlineLeft !== null
-            ? deadlineLeft > 0
-              ? formatDuration(deadlineLeft)
-              : 'overdue'
-            : job.deadlineAt
-              ? formatDateTime(job.deadlineAt)
-              : '-'
-        }
-        sub={`priority ${job.priority}`}
-        tone={deadlineLeft !== null && deadlineLeft <= 0 ? 'bad' : 'fg'}
-      />
-    </div>
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-lg border bg-card px-3 py-2.5 text-[13px]">
+      <Row label="Created" value={formatClock(job.createdAt, now)} />
+      {job.startedAt && (
+        <Row
+          label={job.status === 'pending' ? 'Last started' : 'Started'}
+          value={formatClock(job.startedAt, now)}
+          note={job.status === 'pending' ? null : spanText('queued for', job.availableAt, job.startedAt)}
+        />
+      )}
+      {job.finishedAt && <Row label="Finished" value={formatClock(job.finishedAt, now)} />}
+      {leaseMs !== null && (
+        <Row
+          label="Lease"
+          value={leaseMs > 0 ? `${formatDuration(leaseMs)} left` : 'Expired'}
+          note={leaseMs > 0 ? 'until the worker must check in' : 'the job will be retried'}
+          bad={leaseMs <= 0}
+        />
+      )}
+      {deadlineMs !== null && job.deadlineAt && (
+        <Row
+          label="Deadline"
+          value={formatClock(job.deadlineAt, now)}
+          note={deadlineMs > 0 ? `in ${formatDuration(deadlineMs)}` : 'passed'}
+          bad={deadlineMs <= 0}
+        />
+      )}
+      <Row label="Priority" value={String(job.priority)} />
+    </dl>
   );
 }
