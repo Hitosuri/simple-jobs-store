@@ -1,21 +1,25 @@
+import { useLayoutEffect, useRef } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { Worker } from '@/api/types';
+import { formatAgo } from '@/lib/format';
 import { typeColorVar } from '@/lib/type-color';
 import { cn } from '@/lib/utils';
 import { workerLabels } from '@/lib/worker-label';
-import type { LaneBar } from './lanes';
+import { barTitle, type LaneBar } from './lanes';
 
 const clock = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 const ROW = 'grid grid-cols-[160px_1fr] md:grid-cols-[200px_1fr]';
+const GRID = 'bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px)] bg-[length:25%_100%]';
 
-function Bar({ bar }: { bar: LaneBar }) {
+function Bar({ bar, now }: { bar: LaneBar; now: number }) {
+  const title = barTitle(bar, now);
   return (
     <Link
       to="/jobs/$jobId"
       params={{ jobId: String(bar.jobId) }}
-      aria-label={`Job #${bar.jobId} ${bar.type}${bar.failed ? ' (not succeeded)' : ''}`}
-      title={`#${bar.jobId} ${bar.type}`}
+      aria-label={title.replaceAll('\n', ', ')}
+      title={title}
       style={{
         left: `${bar.leftPct}%`,
         width: `${bar.widthPct}%`,
@@ -26,62 +30,104 @@ function Bar({ bar }: { bar: LaneBar }) {
       }}
       className={cn(
         'absolute inset-y-0.5 min-w-[3px] rounded-[2px] hover:brightness-110',
-        bar.failed && 'ring-2 ring-bad ring-inset',
+        bar.failed && 'inset-ring-2 inset-ring-bad',
       )}
     />
   );
 }
 
+function WorkerLabel({ worker, label, busy, now }: { worker: Worker; label: string; busy: number; now: number }) {
+  const suffix = label === worker.name ? null : label.slice(worker.name.length + 3);
+  const state = worker.connected
+    ? `${busy}/${worker.concurrentLimit} busy`
+    : `last seen ${formatAgo(worker.lastSeenAt, now)}`;
+  const dot = !worker.connected ? 'bg-bad' : busy > 0 ? 'bg-ok' : 'bg-muted-foreground';
+  return (
+    <Link
+      from="/machines"
+      to="/machines/$workerId"
+      params={{ workerId: worker.id }}
+      search={(prev) => prev}
+      title={label}
+      className="sticky left-0 z-10 flex min-h-11 items-center gap-1.5 bg-card py-1 pr-2 hover:bg-inset md:min-h-9"
+    >
+      <span aria-hidden className={cn('size-[7px] shrink-0 rounded-full', dot)} />
+      <span className="min-w-0 leading-4">
+        <span className="block truncate text-[13px]">{worker.name}</span>
+        <span className="block truncate text-xs text-muted-foreground tabular-nums">
+          {suffix ? `${suffix} · ${state}` : state}
+        </span>
+      </span>
+      <span className="sr-only">{worker.connected ? 'online' : 'offline'}</span>
+    </Link>
+  );
+}
+
 export function Swimlane({
-  workers,
+  groups,
   lanes,
+  busy,
   from,
   to,
+  now,
 }: {
-  workers: Worker[];
+  groups: { ip: string; workers: Worker[] }[];
   lanes: Map<string, LaneBar[]>;
+  busy: Map<string, number>;
   from: number;
   to: number;
+  now: number;
 }) {
   const types = [...new Set([...lanes.values()].flatMap((bars) => bars.map((b) => b.type)))].sort();
-  const labels = workerLabels(workers);
+  const labels = workerLabels(groups.flatMap((g) => g.workers));
+  const scroller = useRef<HTMLDivElement>(null);
+  const span = to - from;
+  useLayoutEffect(() => {
+    if (scroller.current) scroller.current.scrollLeft = scroller.current.scrollWidth;
+  }, [span]);
+
   return (
     <div className="flex flex-col gap-2">
-      <div className="overflow-x-auto">
+      <div ref={scroller} className="overflow-x-auto">
         <div className="min-w-[720px]">
           <div className={ROW}>
             <span className="sticky left-0 z-10 bg-card" />
             <div className="flex justify-between pb-1 text-xs text-muted-foreground tabular-nums">
               {TICKS.map((t) => (
-                <span key={t}>{clock.format(from + (to - from) * t)}</span>
+                <span key={t}>{clock.format(from + span * t)}</span>
               ))}
             </div>
           </div>
-          {workers.map((w) => (
-            <div key={w.id} className={cn(ROW, 'border-t border-border', !w.connected && 'text-muted-foreground')}>
-              <Link
-                from="/machines"
-                to="/machines/$workerId"
-                params={{ workerId: w.id }}
-                search={(prev) => prev}
-                className="sticky left-0 z-10 flex min-h-6 items-center gap-1.5 bg-card pr-2 text-[13px]"
-              >
-                <span
-                  aria-hidden
-                  className={cn('size-[7px] shrink-0 rounded-full', w.connected ? 'bg-ok' : 'bg-bad')}
-                />
-                <span title={labels.get(w.id)} className="truncate">
-                  {labels.get(w.id)}
-                </span>
-                <span className="sr-only">{w.connected ? 'online' : 'offline'}</span>
-              </Link>
-              <div className="relative h-6 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px)] bg-[length:25%_100%]">
-                {lanes.get(w.id)?.map((bar) => (
-                  <Bar key={`${bar.jobId}-${bar.attemptNo}`} bar={bar} />
+          {groups.map(({ ip, workers }) => {
+            const live = workers.filter((w) => w.connected);
+            const total = live.reduce((n, w) => n + w.concurrentLimit, 0);
+            const used = live.reduce((n, w) => n + (busy.get(w.id) ?? 0), 0);
+            return (
+              <div key={ip}>
+                <div className={cn(ROW, 'border-t border-border')}>
+                  <div className="sticky left-0 z-10 flex items-baseline justify-between gap-2 bg-card pt-2 pr-2 pb-1 text-xs tabular-nums">
+                    <span className="truncate font-semibold">{ip}</span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {live.length > 0 ? `${used}/${total} slots busy` : 'offline'}
+                    </span>
+                  </div>
+                  <div className={GRID} />
+                </div>
+                {workers.map((w) => (
+                  <div key={w.id} className={cn(ROW, !w.connected && 'text-muted-foreground')}>
+                    <WorkerLabel worker={w} label={labels.get(w.id)!} busy={busy.get(w.id) ?? 0} now={now} />
+                    <div className={cn('flex items-center', GRID)}>
+                      <div className="relative h-6 w-full overflow-hidden">
+                        {lanes.get(w.id)?.map((bar) => (
+                          <Bar key={`${bar.jobId}-${bar.attemptNo}`} bar={bar} now={now} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       {types.length > 0 && (
@@ -95,7 +141,7 @@ export function Swimlane({
           <li className="flex items-center gap-1.5">
             <span
               aria-hidden
-              className="size-2.5 rounded-[2px] bg-muted-foreground ring-2 ring-bad ring-inset"
+              className="size-2.5 rounded-[2px] bg-muted-foreground inset-ring-2 inset-ring-bad"
               style={{
                 backgroundImage: 'repeating-linear-gradient(135deg, transparent 0 3px, rgb(0 0 0 / 0.4) 3px 5px)',
               }}

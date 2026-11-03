@@ -18,13 +18,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatDateTime } from '@/features/job-detail/timeline';
+import { TypeChip } from '@/features/jobs/job-cells';
 import { rateTone, toneClass, type Tone } from '@/features/overview/thresholds';
-import { formatAgo, formatDuration, formatNumber, formatPercent } from '@/lib/format';
-import { typeColorVar } from '@/lib/type-color';
+import { formatRate } from '@/features/stats/delta';
+import { formatAgo, formatClock, formatDuration, formatNumber } from '@/lib/format';
 import { useNow } from '@/lib/use-now';
-import { summarizeAttempts } from './lanes';
+import { latestAttempts, summarizeAttempts } from './lanes';
 import { useAttemptWindow } from './use-window';
 
 const DAY_MS = 86_400_000;
@@ -54,27 +53,17 @@ function Stat({ label, value, tone = 'fg' }: { label: string; value: string; ton
 function Forget({ worker, onForgotten }: { worker: Worker; onForgotten: () => void }) {
   const forget = useForgetWorker();
   const [open, setOpen] = useState(false);
-  const button = (
-    <Button
-      variant="destructive"
-      disabled={worker.connected || forget.isPending}
-      onClick={() => setOpen(true)}
-      className="w-full max-md:h-11"
-    >
-      <Trash2 />
-      Forget worker
-    </Button>
-  );
   return (
     <>
-      {worker.connected ? (
-        <Tooltip>
-          <TooltipTrigger render={<span tabIndex={0} className="flex" />}>{button}</TooltipTrigger>
-          <TooltipContent>Only offline workers can be forgotten</TooltipContent>
-        </Tooltip>
-      ) : (
-        button
-      )}
+      <Button
+        variant="destructive"
+        disabled={forget.isPending}
+        onClick={() => setOpen(true)}
+        className="w-full max-md:h-11"
+      >
+        <Trash2 />
+        Forget worker
+      </Button>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -98,11 +87,7 @@ function Forget({ worker, onForgotten }: { worker: Worker; onForgotten: () => vo
   );
 }
 
-function RecentAttempts({ rows, now }: { rows: AttemptRow[]; now: number }) {
-  const recent = useMemo(
-    () => [...rows].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)).slice(0, RECENT),
-    [rows],
-  );
+function RecentAttempts({ recent, now }: { recent: AttemptRow[]; now: number }) {
   if (recent.length === 0) return <p className="text-xs text-muted-foreground">No attempts in the last 24 h.</p>;
   return (
     <ul className="flex flex-col gap-2.5 text-[13px]">
@@ -118,13 +103,11 @@ function RecentAttempts({ rows, now }: { rows: AttemptRow[]; now: number }) {
               >
                 #{a.jobId}
               </Link>
-              <span className="min-w-0 break-all" style={{ color: typeColorVar(a.jobType) }}>
-                {a.jobType}
-              </span>
+              <TypeChip type={a.jobType} />
               <StatusBadge status={a.outcome ?? 'running'} />
             </div>
             <p className="text-xs text-muted-foreground tabular-nums">
-              {formatDateTime(a.startedAt)}
+              {formatClock(a.startedAt, now)}
               {end !== null && ` · ${formatDuration(end - Date.parse(a.startedAt))}`}
             </p>
           </li>
@@ -142,6 +125,7 @@ function Loaded({ worker, onClose }: { worker: Worker; onClose: () => void }) {
   const running = overview.data?.workers.find((l) => l.worker.id === worker.id)?.running ?? [];
   const rows = useMemo(() => attempts.data ?? [], [attempts.data]);
   const stats = useMemo(() => summarizeAttempts(rows), [rows]);
+  const recent = useMemo(() => latestAttempts(rows, RECENT), [rows]);
 
   return (
     <>
@@ -150,13 +134,19 @@ function Loaded({ worker, onClose }: { worker: Worker; onClose: () => void }) {
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
             <dt className="text-muted-foreground">Machine</dt>
             <dd className="tabular-nums">{worker.ip}</dd>
+            {worker.connected && (
+              <>
+                <dt className="text-muted-foreground">Up since</dt>
+                <dd className="tabular-nums">{formatClock(worker.connectedAt, now)}</dd>
+              </>
+            )}
             <dt className="text-muted-foreground">Heartbeat</dt>
             <dd className="tabular-nums">{formatAgo(worker.lastSeenAt, now)}</dd>
-            <dt className="text-muted-foreground">Lease</dt>
+            <dt className="text-muted-foreground">{worker.connected ? 'Times out' : 'Went offline'}</dt>
             <dd className={worker.connected ? 'tabular-nums' : 'text-bad tabular-nums'}>
               {worker.connected
-                ? `expires in ${formatDuration(worker.leaseMsRemaining)}`
-                : `expired ${formatAgo(worker.leaseUntil, now)}`}
+                ? `in ${formatDuration(worker.leaseMsRemaining)} without a heartbeat`
+                : formatAgo(worker.leaseUntil, now)}
             </dd>
             <dt className="text-muted-foreground">Slots</dt>
             <dd className="tabular-nums">
@@ -170,8 +160,12 @@ function Loaded({ worker, onClose }: { worker: Worker; onClose: () => void }) {
         <Section title="Last 24 h">
           {attempts.data ? (
             <div className="flex gap-3">
-              <Stat label="Done" value={formatNumber(stats.done)} />
-              <Stat label="Success rate" value={formatPercent(stats.successRate)} tone={rateTone(stats.successRate)} />
+              <Stat label="Attempts" value={formatNumber(stats.done)} />
+              <Stat
+                label="Succeeded"
+                value={formatRate(stats.successRate, stats.done)}
+                tone={rateTone(stats.successRate)}
+              />
               <Stat label="Mean run" value={stats.meanRunMs === null ? '-' : formatDuration(stats.meanRunMs)} />
             </div>
           ) : attempts.isError ? (
@@ -185,37 +179,8 @@ function Loaded({ worker, onClose }: { worker: Worker; onClose: () => void }) {
           )}
         </Section>
 
-        <Section title="Running jobs" aside={String(running.length)}>
-          {running.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Idle. No jobs running on this worker.</p>
-          ) : (
-            <ul className="flex flex-col gap-1 text-[13px]">
-              {running.map((job) => (
-                <li key={job.id}>
-                  <Link
-                    to="/jobs/$jobId"
-                    params={{ jobId: String(job.id) }}
-                    className="flex min-h-11 items-center gap-2 md:min-h-7"
-                  >
-                    <span className="font-semibold tabular-nums">#{job.id}</span>
-                    <span className="min-w-0 truncate" style={{ color: typeColorVar(job.type) }}>
-                      {job.type}
-                    </span>
-                    <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                      {formatDuration(now - Date.parse(job.startedAt))}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        <Section
-          title="Recent attempts"
-          aside={attempts.data ? `${Math.min(rows.length, RECENT)} of ${rows.length}` : undefined}
-        >
-          {attempts.data ? <RecentAttempts rows={rows} now={now} /> : <div className="h-24 rounded-md bg-inset" />}
+        <Section title="Attempts" aside={attempts.data ? `${recent.length} of ${rows.length}` : undefined}>
+          {attempts.data ? <RecentAttempts recent={recent} now={now} /> : <div className="h-24 rounded-md bg-inset" />}
         </Section>
 
         <Button
@@ -224,12 +189,14 @@ function Loaded({ worker, onClose }: { worker: Worker; onClose: () => void }) {
           render={<Link to="/jobs" search={{ worker: worker.id }} />}
           className="max-md:h-11"
         >
-          All jobs of this worker
+          See all jobs
         </Button>
       </div>
-      <div className="border-t bg-popover p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <Forget worker={worker} onForgotten={onClose} />
-      </div>
+      {!worker.connected && (
+        <div className="border-t bg-popover p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <Forget worker={worker} onForgotten={onClose} />
+        </div>
+      )}
     </>
   );
 }

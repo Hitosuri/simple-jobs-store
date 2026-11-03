@@ -14,7 +14,6 @@ import {
   RANGES,
   type MachinesUrlSearch,
 } from '@/features/machines/lanes';
-import { MachineCards } from '@/features/machines/machine-cards';
 import { Swimlane } from '@/features/machines/swimlane';
 import { useAttemptWindow } from '@/features/machines/use-window';
 import { useNow } from '@/lib/use-now';
@@ -29,7 +28,16 @@ function MachinesScreen() {
   const win = useAttemptWindow(RANGES[search.range]);
   const attempts = useAttempts(win.fromIso, win.toIso);
   const lanes = useMemo(() => layoutLanes(attempts.data ?? [], win.from, win.to), [attempts.data, win.from, win.to]);
-  const ordered = useMemo(() => groupByMachine(workers.data ?? []).flatMap((g) => g.workers), [workers.data]);
+  const shown = useMemo(
+    () => (search.offline ? workers.data : workers.data?.filter((w) => w.connected)) ?? [],
+    [workers.data, search.offline],
+  );
+  const groups = useMemo(() => groupByMachine(shown), [shown]);
+  const hiddenOffline = (workers.data?.length ?? 0) - shown.length;
+  const busy = useMemo(
+    () => new Map(overview.data?.workers.map((l) => [l.worker.id, l.running.length])),
+    [overview.data],
+  );
 
   function setSearch(patch: Partial<MachinesUrlSearch>) {
     navigate({ from: '/machines', to: '/machines', search: (prev) => ({ ...prev, ...patch }) });
@@ -46,7 +54,7 @@ function MachinesScreen() {
     ) : (
       <div className="h-40 rounded-md bg-inset" />
     );
-  } else if (ordered.length === 0) {
+  } else if (shown.length === 0) {
     lanesBody = (
       <p className="text-sm text-muted-foreground">
         No workers {search.offline ? 'registered' : 'online'}. Start a worker to see its lane here.
@@ -73,7 +81,7 @@ function MachinesScreen() {
             />
           </div>
         )}
-        <Swimlane workers={ordered} lanes={lanes} from={win.from} to={win.to} />
+        <Swimlane groups={groups} lanes={lanes} busy={busy} from={win.from} to={win.to} now={now} />
         {attempts.data?.length === 0 && (
           <p className="mt-2 text-xs text-muted-foreground">No attempts in this range. Try a longer one.</p>
         )}
@@ -83,23 +91,19 @@ function MachinesScreen() {
 
   return (
     <>
-      <PageHeader
-        title="Machines"
-        actions={
-          <Toggle
-            variant="outline"
-            pressed={search.offline}
-            onPressedChange={(offline) => setSearch({ offline })}
-            className="max-md:h-11"
-          >
-            Show offline
-          </Toggle>
-        }
-      />
-      <div className="flex flex-col gap-3">
-        <Card className="gap-2 px-3 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[13px] font-semibold">Attempts per worker</h2>
+      <PageHeader title="Machines" />
+      <Card className="gap-2 px-3 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[13px] font-semibold">Attempts per worker</h2>
+          <div className="flex items-center gap-2">
+            <Toggle
+              variant="outline"
+              pressed={search.offline}
+              onPressedChange={(offline) => setSearch({ offline })}
+              className="max-md:h-11"
+            >
+              Show offline{hiddenOffline > 0 && ` (${hiddenOffline})`}
+            </Toggle>
             <ToggleGroup
               value={[search.range]}
               onValueChange={(v) => v[0] && setSearch({ range: v[0] as MachinesUrlSearch['range'] })}
@@ -114,12 +118,9 @@ function MachinesScreen() {
               ))}
             </ToggleGroup>
           </div>
-          {lanesBody}
-        </Card>
-        {workers.data && ordered.length > 0 && (
-          <MachineCards workers={workers.data} loads={overview.data?.workers ?? []} now={now} />
-        )}
-      </div>
+        </div>
+        {lanesBody}
+      </Card>
       <Outlet />
     </>
   );

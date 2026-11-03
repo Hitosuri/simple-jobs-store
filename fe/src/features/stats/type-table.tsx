@@ -2,10 +2,11 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import type { TypeStats } from '@/api/types';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { rateTone, toneClass } from '@/features/overview/thresholds';
-import { formatDuration, formatNumber, formatPercent } from '@/lib/format';
-import { typeColorVar } from '@/lib/type-color';
+import { TypeChip } from '@/features/jobs/job-cells';
+import { pendingTone, rateTone, toneClass } from '@/features/overview/thresholds';
+import { formatDuration, formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { formatRate } from './delta';
 
 const HEAD = 'text-xs text-muted-foreground';
 const NUM = 'text-right tabular-nums';
@@ -41,23 +42,18 @@ export function TypeTable({ rows }: { rows: TypeStats[] }) {
                   to="/jobs"
                   search={{ type: [r.type] }}
                   onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1.5 hover:underline"
+                  className="hover:underline"
                 >
-                  <span
-                    aria-hidden
-                    className="h-3 w-1 shrink-0 rounded-[1px]"
-                    style={{ backgroundColor: typeColorVar(r.type) }}
-                  />
-                  {r.type}
+                  <TypeChip type={r.type} />
                 </Link>
               </TableCell>
               <TableCell className={NUM}>{formatNumber(r.finished)}</TableCell>
               <TableCell className={cn(NUM, toneClass[rateTone(r.successRate)])}>
-                {formatPercent(r.successRate)}
+                {formatRate(r.successRate, r.finished)}
               </TableCell>
               <TableCell className={NUM}>{ms(r.runP50Ms)}</TableCell>
               <TableCell className={NUM}>{ms(r.runP95Ms)}</TableCell>
-              <TableCell className={NUM}>{ms(r.waitP95Ms)}</TableCell>
+              <TableCell className={cn(NUM, toneClass[pendingTone(r.waitP95Ms)])}>{ms(r.waitP95Ms)}</TableCell>
               <TableCell className={cn(NUM, 'pr-4')}>{formatNumber(r.pendingNow)}</TableCell>
             </TableRow>
           ))}

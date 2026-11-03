@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import type { AttemptRow, Worker } from '@/api/types';
+import type { AttemptOutcome, AttemptRow, Worker } from '@/api/types';
+import { statusLabel } from '@/components/status-badge';
+import { formatClock, formatDuration } from '@/lib/format';
 
 export const RANGES = { '15m': 900_000, '1h': 3_600_000, '6h': 21_600_000, '24h': 86_400_000 } as const;
 
@@ -19,6 +21,9 @@ export interface LaneBar {
   leftPct: number;
   widthPct: number;
   failed: boolean;
+  outcome: AttemptOutcome | null;
+  startedAt: string;
+  durationMs: number;
 }
 
 export function layoutLanes(attempts: AttemptRow[], from: number, to: number): Map<string, LaneBar[]> {
@@ -35,10 +40,23 @@ export function layoutLanes(attempts: AttemptRow[], from: number, to: number): M
       leftPct: ((start - from) / span) * 100,
       widthPct: ((end - start) / span) * 100,
       failed: a.outcome !== null && a.outcome !== 'succeeded',
+      outcome: a.outcome,
+      startedAt: a.startedAt,
+      durationMs: (a.endedAt ? Date.parse(a.endedAt) : to) - Date.parse(a.startedAt),
     };
     lanes.set(a.workerId, [...(lanes.get(a.workerId) ?? []), bar]);
   }
   return lanes;
+}
+
+/** Hover text for a swimlane bar: type, job, outcome, start time and duration, one per line. */
+export function barTitle(bar: LaneBar, now: number): string {
+  return [
+    `${bar.type} #${bar.jobId}`,
+    statusLabel(bar.outcome ?? 'running'),
+    `Started ${formatClock(bar.startedAt, now)}`,
+    `${bar.outcome === null ? 'Running for' : 'Took'} ${formatDuration(bar.durationMs)}`,
+  ].join('\n');
 }
 
 export function summarizeAttempts(attempts: AttemptRow[]): {
@@ -51,6 +69,14 @@ export function summarizeAttempts(attempts: AttemptRow[]): {
   const succeeded = ended.filter((a) => a.outcome === 'succeeded').length;
   const runMs = ended.reduce((sum, a) => sum + (Date.parse(a.endedAt!) - Date.parse(a.startedAt)), 0);
   return { done: ended.length, successRate: succeeded / ended.length, meanRunMs: runMs / ended.length };
+}
+
+/** Every running attempt, then the newest ended ones, up to `limit` rows (more if more are running). */
+export function latestAttempts(attempts: AttemptRow[], limit = 10): AttemptRow[] {
+  const newest = [...attempts].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+  const running = newest.filter((a) => a.outcome === null);
+  const ended = newest.filter((a) => a.outcome !== null);
+  return [...running, ...ended].slice(0, Math.max(limit, running.length));
 }
 
 export function groupByMachine(workers: Worker[]): { ip: string; workers: Worker[] }[] {

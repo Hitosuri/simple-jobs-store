@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { AttemptRow, Worker } from '@/api/types';
-import { groupByMachine, layoutLanes, machinesSearchSchema, summarizeAttempts } from './lanes';
+import {
+  barTitle,
+  groupByMachine,
+  latestAttempts,
+  layoutLanes,
+  machinesSearchSchema,
+  summarizeAttempts,
+} from './lanes';
 
 const FROM = Date.parse('2026-01-01T00:00:00Z');
 const TO = FROM + 100_000;
@@ -22,7 +29,24 @@ function attempt(over: Partial<AttemptRow>): AttemptRow {
 describe('layoutLanes', () => {
   it('places a bar by percentage of the window', () => {
     const bars = layoutLanes([attempt({})], FROM, TO).get('w1');
-    expect(bars).toEqual([{ jobId: 1, attemptNo: 1, type: 't', leftPct: 10, widthPct: 20, failed: false }]);
+    expect(bars).toEqual([
+      {
+        jobId: 1,
+        attemptNo: 1,
+        type: 't',
+        leftPct: 10,
+        widthPct: 20,
+        failed: false,
+        outcome: 'succeeded',
+        startedAt: iso(10_000),
+        durationMs: 20_000,
+      },
+    ]);
+  });
+
+  it('keeps the full duration of an attempt clipped at the window start', () => {
+    const bars = layoutLanes([attempt({ startedAt: iso(-50_000), endedAt: iso(20_000) })], FROM, TO).get('w1');
+    expect(bars?.[0]).toMatchObject({ leftPct: 0, widthPct: 20, durationMs: 70_000 });
   });
 
   it('clips at both edges and drops attempts outside the window', () => {
@@ -57,6 +81,45 @@ describe('layoutLanes', () => {
   it('keeps one lane per worker', () => {
     const lanes = layoutLanes([attempt({ workerId: 'a' }), attempt({ workerId: 'b' })], FROM, TO);
     expect([...lanes.keys()]).toEqual(['a', 'b']);
+  });
+});
+
+describe('barTitle', () => {
+  it('names type, job, outcome label, start and duration', () => {
+    const [bar] = layoutLanes([attempt({ jobId: 7, outcome: 'lease_expired' })], FROM, TO).get('w1')!;
+    expect(barTitle(bar, FROM).split('\n')).toEqual([
+      't #7',
+      'Lease expired',
+      expect.stringMatching(/^Started \d\d:\d\d:\d\d$/),
+      'Took 20s',
+    ]);
+  });
+
+  it('reads as running for an open attempt', () => {
+    const [bar] = layoutLanes([attempt({ outcome: null, endedAt: null })], FROM, TO).get('w1')!;
+    expect(barTitle(bar, FROM).split('\n')).toEqual([
+      't #1',
+      'Running',
+      expect.stringMatching(/^Started /),
+      'Running for 1m 30s',
+    ]);
+  });
+});
+
+describe('latestAttempts', () => {
+  it('lists running attempts first, then the newest ended, capped at the limit', () => {
+    const rows = [
+      attempt({ jobId: 1, startedAt: iso(1_000) }),
+      attempt({ jobId: 2, startedAt: iso(0), outcome: null, endedAt: null }),
+      attempt({ jobId: 3, startedAt: iso(3_000) }),
+      attempt({ jobId: 4, startedAt: iso(2_000) }),
+    ];
+    expect(latestAttempts(rows, 3).map((a) => a.jobId)).toEqual([2, 3, 4]);
+  });
+
+  it('keeps every running attempt even past the limit', () => {
+    const rows = [1, 2, 3].map((jobId) => attempt({ jobId, outcome: null, endedAt: null }));
+    expect(latestAttempts([...rows, attempt({ jobId: 9 })], 2)).toHaveLength(3);
   });
 });
 
