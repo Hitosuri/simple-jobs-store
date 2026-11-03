@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { formatAgo, formatDuration, formatNumber, formatPercent } from './format';
+import { formatAgo, formatClock, formatDuration, formatNumber, formatPercent } from './format';
+
+describe('formatClock', () => {
+  const now = new Date(2026, 10, 3, 15, 0, 0).getTime();
+
+  it('shows only the time for today', () => {
+    expect(formatClock(new Date(2026, 10, 3, 9, 5, 7).toISOString(), now)).toBe('09:05:07');
+  });
+
+  it('adds the date for other days', () => {
+    expect(formatClock(new Date(2026, 10, 2, 23, 59, 0).toISOString(), now)).toBe('Nov 2, 23:59');
+  });
+});
 
 describe('formatDuration', () => {
   it.each([
