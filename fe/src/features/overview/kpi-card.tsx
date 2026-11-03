@@ -19,27 +19,66 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { bulkResultMessage } from '@/features/jobs/bulk-result';
 import { formatDelta } from '@/features/stats/delta';
-import { formatDuration, formatNumber, formatPercent } from '@/lib/format';
+import { TypeChip } from '@/features/jobs/job-cells';
+import { formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { oldestWait, roughDuration, SMALL_SAMPLE, successShown, waitOf } from './summary';
 import { failedTone, pendingTone, rateTone, toneClass, type Tone } from './thresholds';
 
 const CHUNK = 1000;
 
 const rateOf = ({ success, failed }: Finished) => (success + failed ? success / (success + failed) : null);
 
+function QueueRows({ queues, now }: { queues: TypeQueue[]; now: number }) {
+  if (queues.length === 0) return <p className="mt-0.5">Nothing waiting.</p>;
+  const sorted = [...queues].sort((a, b) => b.pending - a.pending || a.type.localeCompare(b.type));
+  return (
+    <ul className="mt-1.5">
+      {sorted.map((q) => {
+        const wait = waitOf(q, now);
+        return (
+          <li key={q.type}>
+            <Link
+              to="/jobs"
+              search={{ status: ['pending'], type: [q.type] }}
+              aria-label={`${q.type}: ${formatNumber(q.pending)} waiting, oldest ${roughDuration(wait)}, show jobs`}
+              className="-mx-2 flex items-center gap-2 rounded-md px-2 py-1 hover:bg-inset max-md:min-h-11"
+            >
+              <span className="flex min-w-0 flex-1">
+                <TypeChip type={q.type} />
+              </span>
+              <span className="text-foreground tabular-nums">{formatNumber(q.pending)}</span>
+              <span
+                className={cn(
+                  'w-[4.5rem] shrink-0 text-right tabular-nums',
+                  pendingTone(wait) === 'warn' && 'font-semibold text-warn',
+                )}
+              >
+                oldest {roughDuration(wait)}
+              </span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function Kpi({
   label,
   value,
   tone,
+  className,
   children,
 }: {
   label: string;
   value: React.ReactNode;
   tone: Tone;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-w-0 px-4 py-3">
+    <div className={cn('min-w-0 px-4 py-3', className)}>
       <div className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</div>
       <div className={cn('text-2xl font-semibold tracking-tight tabular-nums', toneClass[tone])}>{value}</div>
       <div className="text-xs text-muted-foreground">{children}</div>
@@ -114,20 +153,37 @@ export function KpiCard({
   previous: Finished;
   now: number;
 }) {
-  const oldest = queues.length ? now - Math.min(...queues.map((q) => Date.parse(q.oldestAvailableAt))) : null;
-  const rawRate = rateOf(finished);
-  const rate = rawRate === null ? null : Math.round(rawRate * 1000) / 1000;
-  const prev = rateOf(previous);
-  const delta = formatDelta(rawRate, prev, 'rate', '24h');
+  const total = finished.success + finished.failed;
+  const shown = successShown(finished);
+  const delta = formatDelta(rateOf(finished), rateOf(previous), 'rate', '24h');
 
   return (
     <Card className="gap-0 py-0">
-      <div className="grid grid-cols-3 divide-x divide-border lg:grid-cols-1 lg:divide-x-0 lg:divide-y">
-        <Kpi label="Queue" value={formatNumber(pending)} tone={pendingTone(oldest)}>
-          {oldest === null ? 'pending · nothing waiting' : `pending · oldest waits ${formatDuration(oldest)}`}
+      <div className="grid flex-1 grid-cols-2 lg:grid-cols-1 lg:grid-rows-[auto_auto_1fr]">
+        <Kpi
+          label="Queue"
+          value={
+            <>
+              {formatNumber(pending)}
+              <span className="ml-1.5 text-[13px] font-normal tracking-normal text-muted-foreground">waiting</span>
+            </>
+          }
+          tone={pendingTone(oldestWait(queues, now))}
+          className="col-span-2 border-b border-border lg:col-span-1"
+        >
+          <QueueRows queues={queues} now={now} />
         </Kpi>
-        <Kpi label="Success · 24h" value={formatPercent(rate)} tone={rateTone(rate)}>
-          {delta ?? `${formatNumber(finished.success + finished.failed)} jobs`}
+        <Kpi
+          label="Success · 24h"
+          value={shown.text}
+          tone={rateTone(shown.rate)}
+          className="border-r border-border lg:border-r-0 lg:border-b"
+        >
+          {total === 0
+            ? 'none finished'
+            : total < SMALL_SAMPLE
+              ? 'succeeded'
+              : (delta ?? `${formatNumber(total)} jobs`)}
         </Kpi>
         <Kpi
           label="Failed · 24h"

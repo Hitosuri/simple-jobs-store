@@ -6,8 +6,8 @@ import { PageHeader } from '@/components/page-header';
 import { AlertBanner } from '@/features/overview/alert-banner';
 import { Fleet } from '@/features/overview/fleet';
 import { KpiCard } from '@/features/overview/kpi-card';
-import { PendingByType } from '@/features/overview/pending-by-type';
-import { ThroughputChart } from '@/features/overview/throughput-chart';
+import { oldestWait } from '@/features/overview/summary';
+import { isConnectionFailure } from '@/lib/live';
 
 function useNow() {
   const [now, setNow] = useState(() => Date.now());
@@ -35,34 +35,33 @@ function Overview() {
       <PageHeader title="Overview" />
       {data ? (
         <>
-          {failure && <div className="mb-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">{failure}</div>}
+          {failure && !isConnectionFailure(error) && (
+            <div className="mb-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">{failure}</div>
+          )}
           <AlertBanner alerts={data.alerts} workers={data.workers} now={now} />
           <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
-            <Fleet workers={data.workers} pending={data.counts.pending} p95={data.runP95ByType} now={now} />
-            <div className="flex flex-col gap-3">
-              <KpiCard
-                pending={data.counts.pending}
-                failedNow={data.counts.failed}
-                queues={data.pendingByType}
-                finished={data.finished24H}
-                previous={data.finishedPrev24H}
-                now={now}
-              />
-              <PendingByType queues={data.pendingByType} />
-            </div>
-            <div className="lg:col-span-2">
-              <ThroughputChart buckets={data.throughput} />
-            </div>
+            <Fleet
+              workers={data.workers}
+              alerts={data.alerts}
+              failed={Math.min(data.counts.failed, data.finished24H.failed)}
+              oldestWaitMs={oldestWait(data.pendingByType, now)}
+              p95={data.runP95ByType}
+              now={now}
+            />
+            <KpiCard
+              pending={data.counts.pending}
+              failedNow={data.counts.failed}
+              queues={data.pendingByType}
+              finished={data.finished24H}
+              previous={data.finishedPrev24H}
+              now={now}
+            />
           </div>
         </>
       ) : (
         <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
           <Placeholder className="h-80" error={failure} />
-          <div className="flex flex-col gap-3">
-            <Placeholder className="h-44" />
-            <Placeholder className="h-28" />
-          </div>
-          <Placeholder className="h-60 lg:col-span-2" />
+          <Placeholder className="h-80" />
         </div>
       )}
     </>
