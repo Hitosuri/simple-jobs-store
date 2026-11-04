@@ -199,6 +199,7 @@ def attempts_between(
             error_detail=r["error_detail"],
             started_at=EpochMs(r["started_at"]),
             ended_at=None if r["ended_at"] is None else EpochMs(r["ended_at"]),
+            replay=bool(r["replay"]),
             job_type=r["type"],
         )
         for r in rows

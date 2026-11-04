@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   report_error   TEXT,
   progress       TEXT,
   requeued_at    INTEGER,
+  replay         TEXT,
   CHECK ((status = 'running') = (lease_token IS NOT NULL)),
   CHECK ((lease_token IS NULL) = (worker_id IS NULL)),
   CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS job_attempts (
   error_detail TEXT,
   started_at   INTEGER NOT NULL,
   ended_at     INTEGER,
+  replay       INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (job_id, attempt_no)
 ) STRICT;
 
@@ -95,12 +97,16 @@ def connect(db_path: str) -> sqlite3.Connection:
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
-    """Create tables and indexes if missing, and add columns an older `jobs` table lacks."""
+    """Create tables and indexes if missing, and add columns older tables lack."""
     conn.executescript(SCHEMA)
     # No migration framework, and CREATE TABLE IF NOT EXISTS skips a table that already exists.
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
     if "requeued_at" not in columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN requeued_at INTEGER")
+    if "replay" not in columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN replay TEXT")
+    if "replay" not in {row["name"] for row in conn.execute("PRAGMA table_info(job_attempts)")}:
+        conn.execute("ALTER TABLE job_attempts ADD COLUMN replay INTEGER NOT NULL DEFAULT 0")
 
 
 @contextmanager

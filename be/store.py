@@ -21,6 +21,7 @@ from domain import (
     JobNotFinishedError,
     JobNotFoundError,
     JobNotPendingError,
+    JobNotReplayableError,
     JobNotRetryableError,
     JobQuery,
     JobSort,
@@ -29,6 +30,7 @@ from domain import (
     LeaseRejectedError,
     LeaseToken,
     ProgressStep,
+    ReplayOptions,
     Report,
     ReportMethod,
     ReportStatus,
@@ -129,6 +131,7 @@ def _to_job(conn: sqlite3.Connection, row: sqlite3.Row) -> Job:
         requeued_at=requeued_at,
         attempts_used=_used_attempts(conn, JobId(row["id"]), requeued_at),
         last_worker_id=_last_worker(conn, JobId(row["id"]), row["attempt"]),
+        replay=None if row["replay"] is None else ReplayOptions.model_validate_json(row["replay"]),
     )
 
 
@@ -153,6 +156,7 @@ def _to_attempt(row: sqlite3.Row) -> Attempt:
         error_detail=row["error_detail"],
         started_at=EpochMs(row["started_at"]),
         ended_at=_opt_ms(row["ended_at"]),
+        replay=bool(row["replay"]),
     )
 
 
@@ -535,9 +539,10 @@ def claim_job(
             },
         )
         conn.execute(
-            "INSERT INTO job_attempts (job_id, attempt_no, worker_id, lease_token, started_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (job.id, job.attempt + 1, worker_id, lease.token, now),
+            "INSERT INTO job_attempts"
+            " (job_id, attempt_no, worker_id, lease_token, started_at, replay)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (job.id, job.attempt + 1, worker_id, lease.token, now, job.replay is not None),
         )
         return Claim(job=_load_job(conn, job.id), lease=lease)
 
@@ -587,6 +592,17 @@ def _start_report(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -> N
     )
 
 
+def _restore_success(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -> None:
+    conn.execute(
+        """
+        UPDATE jobs SET status = 'success', worker_id = NULL, lease_token = NULL,
+                        lease_until = NULL, error = NULL, error_detail = NULL, updated_at = :now
+        WHERE id = :id
+        """,
+        {"now": now, "id": job_id},
+    )
+
+
 def _retry_or_fail(
     conn: sqlite3.Connection,
     *,
@@ -596,19 +612,24 @@ def _retry_or_fail(
     error: str,
     error_detail: str | None,
 ) -> None:
+    replay = job.replay
+    if replay is not None and not replay.overwrite:
+        _restore_success(conn, now=now, job_id=job.id)
+        return
     used = _used_attempts(conn, job.id, job.requeued_at)
     params = {"now": now, "error": error, "error_detail": error_detail, "id": job.id}
-    if used >= job.max_attempt:
+    if replay is not None or used >= job.max_attempt:
         conn.execute(
             """
             UPDATE jobs SET status = 'failed', worker_id = NULL, lease_token = NULL,
                             lease_until = NULL, error = :error, error_detail = :error_detail,
-                            finished_at = :now, updated_at = :now
+                            result = NULL, finished_at = :now, updated_at = :now
             WHERE id = :id
             """,
             params,
         )
-        _start_report(conn, now=now, job_id=job.id)
+        if replay is None or replay.report_failed:
+            _start_report(conn, now=now, job_id=job.id)
         return
     backoff = min(settings.backoff_base_ms * 2 ** (used - 1), settings.backoff_cap_ms)
     conn.execute(
@@ -827,6 +848,9 @@ def finish_job(
         )
         if isinstance(report, SuccessReport):
             _end_attempt(conn, now=now, job=job, outcome=AttemptOutcome.SUCCEEDED)
+            if job.replay is not None and not job.replay.overwrite:
+                _restore_success(conn, now=now, job_id=job_id)
+                return _load_job(conn, job_id)
             conn.execute(
                 """
                 UPDATE jobs SET status = 'success', result = :result, worker_id = NULL,
@@ -836,7 +860,8 @@ def finish_job(
                 """,
                 {"result": _dump(report.result), "now": now, "id": job_id},
             )
-            _start_report(conn, now=now, job_id=job_id)
+            if job.replay is None or job.replay.report_success:
+                _start_report(conn, now=now, job_id=job_id)
         else:
             _end_attempt(
                 conn,
@@ -925,10 +950,14 @@ def cancel_job(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -> Job:
             raise JobAlreadyFinishedError
         if job.lease is not None:
             _end_attempt(conn, now=now, job=job, outcome=AttemptOutcome.CANCELLED)
+        if job.replay is not None and not job.replay.overwrite:
+            _restore_success(conn, now=now, job_id=job_id)
+            return _load_job(conn, job_id)
         conn.execute(
             """
             UPDATE jobs SET status = 'cancelled', worker_id = NULL, lease_token = NULL,
-                            lease_until = NULL, finished_at = :now, updated_at = :now
+                            lease_until = NULL, result = NULL, finished_at = :now,
+                            updated_at = :now
             WHERE id = :id
             """,
             {"now": now, "id": job_id},
@@ -964,11 +993,63 @@ def retry_job(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -> Job:
                             updated_at = :now, error = NULL, error_detail = NULL,
                             result = NULL, finished_at = NULL, deadline_at = NULL,
                             progress = NULL, report_status = NULL, report_round = 0,
-                            report_cursor = 0, report_next_at = NULL, report_error = NULL
+                            report_cursor = 0, report_next_at = NULL, report_error = NULL,
+                            replay = NULL
             WHERE id = :id
             """,
             {"now": now, "id": job_id},
         )
+        return _load_job(conn, job_id)
+
+
+def replay_job(
+    conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId, options: ReplayOptions
+) -> Job:
+    """Requeue a success job in place for one more run, e.g. after a worker code change.
+
+    Result and `finished_at` stay until the replay ends, so a replay without overwrite can
+    end back at them. With overwrite the report is reset now and restarted at the end only
+    for the outcomes `options` chose.
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        job_id: Job to replay.
+        options: Overwrite and report choices.
+
+    Returns:
+        The pending job.
+
+    Raises:
+        JobNotFoundError: No such job.
+        JobNotReplayableError: Job is not success, or its report is still pending or sending.
+    """
+    with transaction(conn):
+        job = _load_job(conn, job_id)
+        report_busy = job.report is not None and job.report.status in {
+            ReportStatus.PENDING,
+            ReportStatus.REPORTING,
+        }
+        if job.status is not JobStatus.SUCCESS or report_busy:
+            raise JobNotReplayableError
+        conn.execute(
+            """
+            UPDATE jobs SET status = 'pending', available_at = :now, requeued_at = :now,
+                            updated_at = :now, deadline_at = NULL, progress = NULL,
+                            replay = :replay
+            WHERE id = :id
+            """,
+            {"now": now, "id": job_id, "replay": options.model_dump_json()},
+        )
+        if options.overwrite:
+            conn.execute(
+                """
+                UPDATE jobs SET report_status = NULL, report_round = 0, report_cursor = 0,
+                                report_next_at = NULL, report_error = NULL
+                WHERE id = :id
+                """,
+                {"id": job_id},
+            )
         return _load_job(conn, job_id)
 
 

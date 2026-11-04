@@ -479,6 +479,36 @@ def test_api_retry_returns_job_and_409_code(client: TestClient) -> None:
     assert error_code(again) == "JOB_NOT_RETRYABLE"
 
 
+REPLAY_KEEP = {"overwrite": False, "reportSuccess": False, "reportFailed": False}
+
+
+def test_api_replay_marks_job_and_attempt(client: TestClient) -> None:
+    register(client)
+    job_id = create(client)["id"]
+    first = claim(client)
+    client.post(f"/api/jobs/{job_id}/finish", json={**lease_body(first), "status": "success"})
+    replayed = client.post(f"/api/jobs/{job_id}/replay", json=REPLAY_KEEP)
+    assert replayed.status_code == 200
+    assert replayed.json()["data"]["status"] == "pending"
+    assert replayed.json()["data"]["replay"] == REPLAY_KEEP
+    claim(client)
+    detail = client.get(f"/api/jobs/{job_id}").json()["data"]
+    assert [a["replay"] for a in detail["attempts"]] == [False, True]
+
+
+def test_api_replay_409_when_not_success(client: TestClient) -> None:
+    job_id = create(client)["id"]
+    resp = client.post(f"/api/jobs/{job_id}/replay", json=REPLAY_KEEP)
+    assert resp.status_code == 409
+    assert error_code(resp) == "JOB_NOT_REPLAYABLE"
+
+
+def test_api_replay_reports_without_overwrite_is_422(client: TestClient) -> None:
+    job_id = create(client)["id"]
+    body = {**REPLAY_KEEP, "reportFailed": True}
+    assert client.post(f"/api/jobs/{job_id}/replay", json=body).status_code == 422
+
+
 def test_api_patch_priority_and_409_when_not_pending(client: TestClient) -> None:
     job_id = create(client)["id"]
     patched = client.patch(f"/api/jobs/{job_id}", json={"priority": 5})

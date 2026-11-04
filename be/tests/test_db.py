@@ -58,6 +58,25 @@ def test_init_schema_adds_requeued_at_to_an_old_jobs_table(tmp_path: Path) -> No
     conn.close()
 
 
+def test_init_schema_adds_replay_columns_to_old_tables(tmp_path: Path) -> None:
+    conn = connect(str(tmp_path / "old.db"))
+    old = SCHEMA.replace("  replay         TEXT,\n", "").replace(
+        "  replay       INTEGER NOT NULL DEFAULT 0,\n", ""
+    )
+    conn.executescript(old)
+    conn.execute("INSERT INTO workers VALUES ('w1', 'n', '127.0.0.1', 1, 0, 0, 0)")
+    conn.execute(INSERT_JOB, ("pending", None, None, None, None))
+    conn.execute(
+        "INSERT INTO job_attempts (job_id, attempt_no, worker_id, lease_token, started_at)"
+        " VALUES (1, 1, 'w1', 'tok', 0)",
+    )
+    init_schema(conn)
+    init_schema(conn)
+    assert conn.execute("SELECT replay FROM jobs").fetchone()[0] is None
+    assert conn.execute("SELECT replay FROM job_attempts").fetchone()[0] == 0
+    conn.close()
+
+
 def test_transaction_rolls_back_on_error(conn: sqlite3.Connection) -> None:
     with pytest.raises(RuntimeError), transaction(conn):  # noqa: PT012
         conn.execute(INSERT_JOB, ("pending", None, None, None, None))

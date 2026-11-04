@@ -94,13 +94,15 @@ curl -X POST http://127.0.0.1:8000/api/jobs -H "Content-Type: application/json" 
 | `error` / `errorDetail` | Worker's own error when it reported `failed`. A worker that crashes, is killed or loses the network reports nothing: `error` is `lease_expired`. An attempt that ran past `maxRunMs`: `deadline_exceeded`. Detail `null` for both. Cleared on `success` |
 | `attempt` / `maxAttempt` | Claims so far (releases included) / attempt limit |
 | `requeuedAt` / `attemptsUsed` | `requeuedAt` is `null` unless an operator requeued the job. `attemptsUsed` is what counts against `maxAttempt`: attempts since `requeuedAt` |
+| `replay` | `null`, or `{overwrite, reportSuccess, reportFailed}` once an operator replayed a `success` job. A replayed job goes back to `pending`/`running` for one run while `result` and `finishedAt` keep their old values. Without `overwrite` it ends at its old `success` and you get no new callback; with it, the job takes the run's outcome and you get a callback only for the outcomes the operator chose |
 | `availableAt` | While `pending`: when the job can be claimed (later than now during retry backoff) |
 | `startedAt` / `finishedAt` | Latest claim / when it reached `success`, `failed` or `cancelled` |
 | `reports`, `reportStatus`, `reportRound`, `reportCursor`, `reportNextAt`, `reportError` | Callback delivery, §4 |
 | `progress` | `null`, or the worker's steps in first-reported order: `{id, status, current, total, percent, message}`. `status` is `pending`, `running`, `done`, `failed` or `skipped`; the other keys may be `null`. Each step's `percent` is 0..100, derived from `current / total` when the worker sent none; `null` means unknown (show a spinner). No overall percent: steps differ in length. Reset on each new claim, kept after finish. Poll `GET /jobs/{id}`; not sent in callbacks |
 
 Other fields (`workerId`, `leaseUntil`, `deadlineAt`, `createdAt`, `updatedAt`, …) are for
-debugging. **Attempt:** `attemptNo, workerId, outcome, error, errorDetail, startedAt, endedAt`;
+debugging. **Attempt:** `attemptNo, workerId, outcome, error, errorDetail, startedAt, endedAt, replay`
+(`true` for a replay run);
 `outcome` is `succeeded`, `failed`, `lease_expired`, `deadline_exceeded`, `released`,
 `cancelled`, or `null` while running.
 

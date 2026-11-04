@@ -107,6 +107,7 @@ The cleaner deletes `success` / `failed` / `cancelled` jobs whose `finishedAt` i
 | `GET /api/jobs/{id}` | - | `{job, attempts}`, attempts oldest first |
 | `POST /api/jobs/{id}/cancel` | - | job |
 | `POST /api/jobs/{id}/retry` | - | job (§7.1) |
+| `POST /api/jobs/{id}/replay` | `overwrite`, `reportSuccess`, `reportFailed` (all bool; reports need `overwrite`, else 422) | job (§7.1) |
 | `PATCH /api/jobs/{id}` | `priority` (int32) | job (§7.1) |
 | `DELETE /api/jobs/{id}` | - | `null` (§7.1) |
 | `POST /api/jobs/bulk` | `action` (`cancel`, `retry`, `delete`, `priority`), `ids` (1..1000, each 1..2^63-1), `priority` (only for `priority`) | `{done: [id], skipped: [{id, code}]}` |
@@ -130,7 +131,17 @@ Used by the control room. Failures use the usual error envelope.
   attempts started after it (`attemptsUsed`); older attempts stay in the history. `deadlineAt` is
   cleared, so the worker of the old attempt cannot reclaim it. `lastWorkerId` is the worker of the
   latest attempt. Report fields are reset as for a new job: the provider gets a new report when the
-  job finishes again.
+  job finishes again. A retry clears `replay`.
+- **Replay** (`success` only, and not while its report is `pending` or `reporting`, else
+  `JOB_NOT_REPLAYABLE` 409): runs the job once more under the same id, e.g. after a worker code
+  change. The job goes back to `pending` with `replay` set to the choices; the next attempt has
+  `replay: true`. One run only: a failure, lease expiry or deadline ends it with no retry.
+  Without `overwrite`, the job ends back at `success` with its old `result` and `finishedAt`
+  whatever the run did (cancel included), and no report is sent; the run's outcome is only in its
+  attempt. With `overwrite`, report fields are reset at once, the job ends with the run's outcome
+  (`result` is `null` on failure or cancel), and the provider is reported only if `reportSuccess`
+  / `reportFailed` matches that outcome. While pending or running, `result` and `finishedAt` still
+  hold the old values.
 - **Priority** (`pending` only, else `JOB_NOT_PENDING` 409): changes `priority`.
 - **Delete** (finished jobs only, else `JOB_NOT_FINISHED` 409): removes the job and its attempts. If its report is still `pending` or
   `reporting`, that report is dropped and the provider never receives it.
@@ -144,7 +155,8 @@ Objects:
   `ip` is the client address of the last register or heartbeat. `connected` means `leaseUntil > now`.
 - **page** (every paginated list): `items, page, pageSize, total`. `total` counts all matches;
   pages = `ceil(total / pageSize)`. Offset-based: rows inserted meanwhile shift later pages.
-- **attempt:** `attemptNo, workerId, outcome, error, errorDetail, startedAt, endedAt`.
+- **attempt:** `attemptNo, workerId, outcome, error, errorDetail, startedAt, endedAt, replay`.
+- **job** `replay`: `null`, or `{overwrite, reportSuccess, reportFailed}` once replayed (kept after it ends).
 - **Never returned in reads:** the lease token.
 
 ## 8. Reports to providers

@@ -20,6 +20,7 @@ from domain import (
     JobNotFinishedError,
     JobNotFoundError,
     JobNotPendingError,
+    JobNotReplayableError,
     JobNotRetryableError,
     JobQuery,
     JobSort,
@@ -28,6 +29,7 @@ from domain import (
     LeaseRejectedError,
     LeaseToken,
     ProgressStep,
+    ReplayOptions,
     Report,
     ReportMethod,
     ReportStatus,
@@ -1302,6 +1304,187 @@ def test_old_worker_cannot_reclaim_a_requeued_job(
     with pytest.raises(LeaseRejectedError):
         heartbeat(conn, clock, settings, claimed)
     assert store.get_job(conn, job_id=claimed.job.id)[0].status is JobStatus.PENDING
+
+
+KEEP = ReplayOptions(overwrite=False, report_success=False, report_failed=False)
+
+
+def overwrite(*, report_success: bool = False, report_failed: bool = False) -> ReplayOptions:
+    return ReplayOptions(overwrite=True, report_success=report_success, report_failed=report_failed)
+
+
+def succeeded_job(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, max_attempt: int = 3
+) -> Job:
+    """A success job (result {"v": 1}) whose report was delivered."""
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=max_attempt, reports=HOOKS)
+    claimed = claim(conn, clock, settings, wid)
+    clock.advance(1_000)
+    finish(conn, clock, settings, claimed, SuccessReport(result={"v": 1}))
+    record(conn, clock, settings, taken(conn, clock, settings), None)
+    clock.advance(1_000)
+    return store.get_job(conn, job_id=claimed.job.id)[0]
+
+
+def replay(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, options: ReplayOptions
+) -> tuple[Job, Claim]:
+    """Replay a fresh success job and claim it; returns the job before replay and the claim."""
+    before = succeeded_job(conn, clock, settings)
+    store.replay_job(conn, now=clock(), job_id=before.id, options=options)
+    return before, claim(conn, clock, settings, WorkerId("w1"))
+
+
+def test_replay_options_need_overwrite_to_report() -> None:
+    with pytest.raises(ValueError, match="overwrite"):
+        ReplayOptions(overwrite=False, report_success=True, report_failed=False)
+
+
+def test_replay_requeues_success_job_in_place_keeping_result(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    before = succeeded_job(conn, clock, settings)
+    replayed = store.replay_job(conn, now=clock(), job_id=before.id, options=KEEP)
+    assert replayed.id == before.id
+    assert replayed.status is JobStatus.PENDING
+    assert replayed.available_at == clock.now
+    assert replayed.replay == KEEP
+    assert (replayed.result, replayed.finished_at) == (before.result, before.finished_at)
+    assert replayed.report == before.report
+
+
+def test_replay_attempt_is_marked(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    _, claimed = replay(conn, clock, settings, KEEP)
+    attempts = store.get_job(conn, job_id=claimed.job.id)[1]
+    assert [a.replay for a in attempts] == [False, True]
+
+
+@pytest.mark.parametrize("state", ["pending", "running", "failed", "cancelled"])
+def test_replay_rejects_jobs_that_did_not_succeed(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, state: str
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    job = add_job(conn, clock, settings, max_attempt=1)
+    if state == "cancelled":
+        store.cancel_job(conn, now=clock(), job_id=job.id)
+    elif state != "pending":
+        claimed = claim(conn, clock, settings, wid)
+        if state == "failed":
+            finish(conn, clock, settings, claimed, BOOM)
+    with pytest.raises(JobNotReplayableError):
+        store.replay_job(conn, now=clock(), job_id=job.id, options=KEEP)
+
+
+def test_replay_rejects_job_whose_report_is_still_being_delivered(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    with pytest.raises(JobNotReplayableError):
+        store.replay_job(conn, now=clock(), job_id=claimed.job.id, options=KEEP)
+
+
+def test_replay_unknown_job_raises(conn: sqlite3.Connection, clock: FakeClock) -> None:
+    with pytest.raises(JobNotFoundError):
+        store.replay_job(conn, now=clock(), job_id=JobId(999), options=KEEP)
+
+
+@pytest.mark.parametrize("outcome", [SuccessReport(result={"v": 2}), BOOM])
+def test_replay_without_overwrite_restores_the_old_success(
+    conn: sqlite3.Connection,
+    clock: FakeClock,
+    settings: Settings,
+    outcome: SuccessReport | FailureReport,
+) -> None:
+    before, claimed = replay(conn, clock, settings, KEEP)
+    after = finish(conn, clock, settings, claimed, outcome)
+    assert after.status is JobStatus.SUCCESS
+    assert (after.result, after.finished_at) == (before.result, before.finished_at)
+    assert (after.error, after.error_detail, after.lease) == (None, None, None)
+    assert after.report == before.report
+
+
+def test_replay_lease_expiry_without_overwrite_restores_the_old_success(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    before, claimed = replay(conn, clock, settings, KEEP)
+    clock.advance(settings.job_lease_ms)
+    run_cleanup(conn, clock, settings)
+    job, attempts = store.get_job(conn, job_id=claimed.job.id)
+    assert (job.status, job.result, job.error) == (JobStatus.SUCCESS, before.result, None)
+    assert attempts[-1].outcome is AttemptOutcome.LEASE_EXPIRED
+
+
+@pytest.mark.parametrize("options", [overwrite(report_success=True), overwrite()])
+def test_replay_with_overwrite_success_stores_new_result(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, options: ReplayOptions
+) -> None:
+    _, claimed = replay(conn, clock, settings, options)
+    after = finish(conn, clock, settings, claimed, SuccessReport(result={"v": 2}))
+    assert (after.status, after.result, after.finished_at) == (
+        JobStatus.SUCCESS,
+        {"v": 2},
+        clock.now,
+    )
+    assert after.report is not None
+    assert (after.report.status is ReportStatus.PENDING) is options.report_success
+
+
+@pytest.mark.parametrize("options", [overwrite(report_failed=True), overwrite()])
+def test_replay_with_overwrite_failure_fails_without_retry(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, options: ReplayOptions
+) -> None:
+    _, claimed = replay(conn, clock, settings, options)
+    after = finish(conn, clock, settings, claimed, BOOM)
+    assert (after.status, after.result, after.error) == (JobStatus.FAILED, None, "boom")
+    assert after.finished_at == clock.now
+    assert after.report is not None
+    assert (after.report.status is ReportStatus.PENDING) is options.report_failed
+
+
+def test_replay_failure_ignores_report_success_choice(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    _, claimed = replay(conn, clock, settings, overwrite(report_success=True))
+    after = finish(conn, clock, settings, claimed, BOOM)
+    assert after.report is not None
+    assert after.report.status is None
+
+
+def test_cancel_replay_without_overwrite_restores_the_old_success(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    before, claimed = replay(conn, clock, settings, KEEP)
+    after = store.cancel_job(conn, now=clock(), job_id=claimed.job.id)
+    assert (after.status, after.result, after.finished_at) == (
+        JobStatus.SUCCESS,
+        before.result,
+        before.finished_at,
+    )
+    attempts = store.get_job(conn, job_id=claimed.job.id)[1]
+    assert attempts[-1].outcome is AttemptOutcome.CANCELLED
+
+
+def test_cancel_replay_with_overwrite_cancels_and_drops_result(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    _, claimed = replay(conn, clock, settings, overwrite())
+    after = store.cancel_job(conn, now=clock(), job_id=claimed.job.id)
+    assert (after.status, after.result) == (JobStatus.CANCELLED, None)
+
+
+def test_retry_after_failed_replay_is_a_normal_retry(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    _, claimed = replay(conn, clock, settings, overwrite())
+    finish(conn, clock, settings, claimed, BOOM)
+    retried = store.retry_job(conn, now=clock(), job_id=claimed.job.id)
+    assert retried.replay is None
+    again = claim(conn, clock, settings, claimed.lease.worker_id)
+    assert finish(conn, clock, settings, again, BOOM).status is JobStatus.PENDING
+    assert store.get_job(conn, job_id=claimed.job.id)[1][-1].replay is False
 
 
 def test_set_priority_updates_pending_job(

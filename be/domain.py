@@ -67,6 +67,7 @@ class ErrorCode(StrEnum):
     LEASE_REJECTED = "LEASE_REJECTED"
     JOB_ALREADY_FINISHED = "JOB_ALREADY_FINISHED"
     JOB_NOT_RETRYABLE = "JOB_NOT_RETRYABLE"
+    JOB_NOT_REPLAYABLE = "JOB_NOT_REPLAYABLE"
     JOB_NOT_PENDING = "JOB_NOT_PENDING"
     JOB_NOT_FINISHED = "JOB_NOT_FINISHED"
     WORKER_CONNECTED = "WORKER_CONNECTED"
@@ -122,6 +123,27 @@ class ProgressStep(BaseModel):
     def _check(self) -> Self:
         if self.total is not None and self.current is None:
             msg = "total requires current"
+            raise ValueError(msg)
+        return self
+
+
+class ReplayOptions(BaseModel):
+    """Choices for an operator replay of a success job; reports need `overwrite`.
+
+    A replay runs once. Without `overwrite` the job ends back at its old success whatever
+    the replay did; with it the job keeps the replay's outcome.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    overwrite: bool
+    report_success: bool
+    report_failed: bool
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if not self.overwrite and (self.report_success or self.report_failed):
+            msg = "reports require overwrite"
             raise ValueError(msg)
         return self
 
@@ -188,6 +210,7 @@ class Job:
     requeued_at: EpochMs | None
     attempts_used: int
     last_worker_id: WorkerId | None
+    replay: ReplayOptions | None
 
 
 class JobSort(StrEnum):
@@ -225,6 +248,7 @@ class Attempt:
     error_detail: str | None
     started_at: EpochMs
     ended_at: EpochMs | None
+    replay: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,6 +334,13 @@ class JobNotRetryableError(StoreError):
 
     code = ErrorCode.JOB_NOT_RETRYABLE
     message = "job is not failed or cancelled"
+
+
+class JobNotReplayableError(StoreError):
+    """Only success jobs whose report is not being delivered can be replayed."""
+
+    code = ErrorCode.JOB_NOT_REPLAYABLE
+    message = "job is not success or its report is still being delivered"
 
 
 class JobNotPendingError(StoreError):

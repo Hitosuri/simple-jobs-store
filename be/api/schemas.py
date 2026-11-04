@@ -29,6 +29,7 @@ from domain import (
     Lease,
     LeaseToken,
     ProgressStep,
+    ReplayOptions,
     ReportMethod,
     ReportStatus,
     StepStatus,
@@ -152,6 +153,27 @@ class JobPatchBody(CamelModel):
     """Body of `PATCH /api/jobs/{id}`."""
 
     priority: int = Field(ge=-(2**31), le=2**31 - 1)
+
+
+class ReplayChoices(CamelModel):
+    """Body of `POST /api/jobs/{id}/replay`, also echoed as a job's `replay`."""
+
+    overwrite: bool
+    report_success: bool
+    report_failed: bool
+
+    def options(self) -> ReplayOptions:
+        """The store's form of these choices."""
+        return ReplayOptions(
+            overwrite=self.overwrite,
+            report_success=self.report_success,
+            report_failed=self.report_failed,
+        )
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        self.options()
+        return self
 
 
 class BulkBody(CamelModel):
@@ -297,6 +319,7 @@ class JobOut(CamelModel):
     requeued_at: datetime | None
     attempts_used: int
     last_worker_id: WorkerId | None
+    replay: ReplayChoices | None
 
     @classmethod
     def build(cls, job: Job) -> Self:
@@ -335,6 +358,9 @@ class JobOut(CamelModel):
             requeued_at=_opt_dt(job.requeued_at),
             attempts_used=job.attempts_used,
             last_worker_id=job.last_worker_id,
+            replay=None
+            if job.replay is None
+            else ReplayChoices.model_validate(job.replay.model_dump()),
         )
 
 
@@ -385,6 +411,7 @@ class AttemptOut(CamelModel):
     error_detail: str | None
     started_at: datetime
     ended_at: datetime | None
+    replay: bool
 
     @classmethod
     def build(cls, attempt: Attempt) -> Self:
@@ -397,6 +424,7 @@ class AttemptOut(CamelModel):
             error_detail=attempt.error_detail,
             started_at=_dt(attempt.started_at),
             ended_at=_opt_dt(attempt.ended_at),
+            replay=attempt.replay,
         )
 
 

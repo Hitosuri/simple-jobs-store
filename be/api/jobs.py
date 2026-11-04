@@ -26,6 +26,7 @@ from api.schemas import (
     JobPatchBody,
     LeaseBody,
     Page,
+    ReplayChoices,
     epoch_ms,
 )
 from domain import (
@@ -184,6 +185,13 @@ def cancel_job(job_id: JobIdPath, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
 def retry_job(job_id: JobIdPath, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
     """Requeue a failed or cancelled job in place."""
     job = store.retry_job(conn, now=now, job_id=JobId(job_id))
+    return ApiOk[JobOut](data=JobOut.build(job))
+
+
+@router.post("/{job_id}/replay")
+def replay_job(job_id: JobIdPath, body: ReplayChoices, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
+    """Run a success job once more in place."""
+    job = store.replay_job(conn, now=now, job_id=JobId(job_id), options=body.options())
     return ApiOk[JobOut](data=JobOut.build(job))
 
 
