@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   report_cursor  INTEGER NOT NULL DEFAULT 0,
   report_next_at INTEGER,
   report_error   TEXT,
+  report_sends   TEXT,
   progress       TEXT,
   requeued_at    INTEGER,
   replay         TEXT,
@@ -105,6 +106,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE jobs ADD COLUMN requeued_at INTEGER")
     if "replay" not in columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN replay TEXT")
+    if "report_sends" not in columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN report_sends TEXT")
     if "replay" not in {row["name"] for row in conn.execute("PRAGMA table_info(job_attempts)")}:
         conn.execute("ALTER TABLE job_attempts ADD COLUMN replay INTEGER NOT NULL DEFAULT 0")
 

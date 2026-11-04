@@ -28,6 +28,7 @@ from domain import (
     JobStatus,
     Lease,
     LeaseToken,
+    ManualSend,
     ProgressStep,
     ReplayOptions,
     ReportMethod,
@@ -241,6 +242,18 @@ class JobHeartbeatBody(LeaseBody):
         return steps
 
 
+class ReportSendOut(CamelModel):
+    """Last operator send of a report to one method; `error` is None when delivered."""
+
+    at: datetime
+    error: str | None
+
+    @classmethod
+    def build(cls, send: ManualSend) -> Self:
+        """Convert a stored send."""
+        return cls(at=_dt(send.at), error=send.error)
+
+
 class ProgressStepOut(CamelModel):
     """One progress step; `percent` is derived from `current`/`total` when the worker sent none."""
 
@@ -315,6 +328,7 @@ class JobOut(CamelModel):
     report_cursor: int
     report_next_at: datetime | None
     report_error: str | None
+    report_sends: list[ReportSendOut | None] | None
     progress: list[ProgressStepOut] | None
     requeued_at: datetime | None
     attempts_used: int
@@ -352,6 +366,12 @@ class JobOut(CamelModel):
             report_cursor=0 if report is None else report.cursor,
             report_next_at=_opt_dt(None if report is None else report.next_at),
             report_error=None if report is None else report.error,
+            report_sends=None
+            if report is None
+            else [
+                None if (send := report.sends.get(i)) is None else ReportSendOut.build(send)
+                for i in range(len(report.methods))
+            ],
             progress=None
             if job.progress is None
             else [ProgressStepOut.build(step) for step in job.progress],

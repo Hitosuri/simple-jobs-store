@@ -98,6 +98,7 @@ curl -X POST http://127.0.0.1:8000/api/jobs -H "Content-Type: application/json" 
 | `availableAt` | While `pending`: when the job can be claimed (later than now during retry backoff) |
 | `startedAt` / `finishedAt` | Latest claim / when it reached `success`, `failed` or `cancelled` |
 | `reports`, `reportStatus`, `reportRound`, `reportCursor`, `reportNextAt`, `reportError` | Callback delivery, §4 |
+| `reportSends` | `null` without `reports`; else one entry per URL in `reports` order: `null`, or `{at, error}` for the last manual send by an operator (`error` is `null` when delivered) |
 | `progress` | `null`, or the worker's steps in first-reported order: `{id, status, current, total, percent, message}`. `status` is `pending`, `running`, `done`, `failed` or `skipped`; the other keys may be `null`. Each step's `percent` is 0..100, derived from `current / total` when the worker sent none; `null` means unknown (show a spinner). No overall percent: steps differ in length. Reset on each new claim, kept after finish. Poll `GET /jobs/{id}`; not sent in callbacks |
 
 Other fields (`workerId`, `leaseUntil`, `deadlineAt`, `createdAt`, `updatedAt`, …) are for
@@ -167,8 +168,9 @@ If B works, it stops at the second send (~10 s): `reportStatus` = `success`.
 If `reportStatus` is `failed`, read the job with `GET /jobs/{jobId}` instead (before retention
 deletes it), or once your endpoint is back, ask an operator to press "Send again" on that URL in
 the control room (`POST /jobs/{jobId}/reports/{index}/send`): one send to that one URL, no retry.
-It also works after `success`, e.g. if you lost what you received. Don't create the job again to
-get a new callback: that runs the work again.
+It also works after `success`, e.g. if you lost what you received. Its outcome shows in
+`reportSends`, not in `reportStatus`. Don't create the job again to get a new callback: that runs
+the work again.
 
 An operator can requeue a `failed` or `cancelled` job. It then runs again under the same id, and
 when it finishes you get a new report for that id (`reportStatus` is reset), even if you had

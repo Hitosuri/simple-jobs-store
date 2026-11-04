@@ -29,6 +29,7 @@ from domain import (
     Lease,
     LeaseRejectedError,
     LeaseToken,
+    ManualSend,
     ProgressStep,
     ReplayOptions,
     Report,
@@ -1237,30 +1238,19 @@ def give_up_report(conn: sqlite3.Connection, clock: FakeClock, settings: Setting
 
 def resend(
     conn: sqlite3.Connection, clock: FakeClock, settings: Settings, job_id: JobId, index: int
-) -> ReportTask:
-    return store.resend_report(conn, now=clock(), settings=settings, job_id=job_id, index=index)
+) -> ReportMethod:
+    del clock, settings
+    return store.resend_report(conn, job_id=job_id, index=index)[1]
 
 
-def record_resend(
-    conn: sqlite3.Connection,
-    clock: FakeClock,
-    settings: Settings,
-    task: ReportTask,
-    error: str | None,
+def record_send(
+    conn: sqlite3.Connection, clock: FakeClock, job_id: JobId, index: int, error: str | None
 ) -> None:
-    store.record_report(
-        conn,
-        now=clock(),
-        settings=settings,
-        job_id=task.job.id,
-        token=task.token,
-        error=error,
-        retry=False,
-    )
+    store.record_manual_send(conn, now=clock(), job_id=job_id, index=index, error=error)
 
 
 @pytest.mark.parametrize("outcome", [SuccessReport(result=None), BOOM])
-def test_resend_report_sends_once_to_the_chosen_method(
+def test_manual_send_is_kept_per_method_beside_the_automatic_delivery(
     conn: sqlite3.Connection,
     clock: FakeClock,
     settings: Settings,
@@ -1269,45 +1259,81 @@ def test_resend_report_sends_once_to_the_chosen_method(
     one_round = replace(settings, report_max_rounds=1)
     claimed = finished_with_reports(conn, clock, one_round, outcome, max_attempt=1)
     give_up_report(conn, clock, one_round)
-    task = resend(conn, clock, one_round, claimed.job.id, 1)
-    assert task.method == HOOKS[1]
-    assert task.token == clock.now + one_round.report_timeout_ms
-    report = report_of(conn, claimed.job.id)
-    assert (report.status, report.cursor, report.next_at) == (
-        ReportStatus.REPORTING,
-        1,
-        task.token,
-    )
-    record_resend(conn, clock, one_round, task, None)
-    report = report_of(conn, claimed.job.id)
-    assert (report.status, report.next_at, report.error) == (ReportStatus.SUCCESS, None, None)
+    before = report_of(conn, claimed.job.id)
+    assert resend(conn, clock, one_round, claimed.job.id, 1) == HOOKS[1]
+    record_send(conn, clock, claimed.job.id, 1, None)
+    clock.advance(1_000)
+    record_send(conn, clock, claimed.job.id, 0, "HTTP 503")
+    after = report_of(conn, claimed.job.id)
+    assert replace(after, sends={}) == before
+    assert after.sends == {
+        1: ManualSend(at=EpochMs(clock.now - 1_000), error=None),
+        0: ManualSend(at=clock.now, error="HTTP 503"),
+    }
+    clock.advance(one_round.report_backoff_cap_ms)
     assert take(conn, clock, one_round) is None
 
 
-def test_failed_resend_is_not_retried(
+def test_manual_send_overwrites_the_previous_one_for_that_method(
     conn: sqlite3.Connection, clock: FakeClock, settings: Settings
 ) -> None:
     job = succeeded_job(conn, clock, settings)
-    task = resend(conn, clock, settings, job.id, 0)
-    record_resend(conn, clock, settings, task, "HTTP 503")
-    report = report_of(conn, job.id)
-    assert (report.status, report.next_at, report.error) == (ReportStatus.FAILED, None, "HTTP 503")
-    assert (report.round, report.cursor) == (0, 0)
-    clock.advance(settings.report_backoff_cap_ms)
-    assert take(conn, clock, settings) is None
+    record_send(conn, clock, job.id, 0, "HTTP 500")
+    clock.advance(1_000)
+    record_send(conn, clock, job.id, 0, None)
+    assert report_of(conn, job.id).sends == {0: ManualSend(at=clock.now, error=None)}
 
 
-def test_resend_report_leaves_job_fields_alone(
+def test_manual_send_leaves_job_fields_alone(
     conn: sqlite3.Connection, clock: FakeClock, settings: Settings
 ) -> None:
     job = succeeded_job(conn, clock, settings)
-    record_resend(conn, clock, settings, resend(conn, clock, settings, job.id, 0), None)
+    record_send(conn, clock, job.id, 0, None)
     after = store.get_job(conn, job_id=job.id)[0]
     assert (after.status, after.result, after.updated_at) == (
         job.status,
         job.result,
         job.updated_at,
     )
+
+
+def test_manual_sends_are_cleared_when_the_report_restarts(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=1, reports=HOOKS)
+    claimed = claim(conn, clock, settings, wid)
+    finish(conn, clock, settings, claimed, BOOM)
+    record(conn, clock, settings, taken(conn, clock, settings), None)
+    record_send(conn, clock, claimed.job.id, 0, None)
+    assert store.retry_job(conn, now=clock(), job_id=claimed.job.id).report == Report(
+        methods=HOOKS, status=None, round=0, cursor=0, next_at=None, error=None
+    )
+    record_send(conn, clock, claimed.job.id, 0, None)
+    assert report_of(conn, claimed.job.id).sends == {}
+
+
+def test_manual_sends_are_cleared_when_a_reclaimed_job_finishes_again(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    add_job(conn, clock, settings, max_attempt=1, reports=HOOKS)
+    claimed = claim(conn, clock, settings, wid)
+    clock.advance(settings.job_lease_ms)
+    run_cleanup(conn, clock, settings)
+    record(conn, clock, settings, taken(conn, clock, settings), None)
+    record_send(conn, clock, claimed.job.id, 0, None)
+    finish(conn, clock, settings, claimed, SuccessReport(result=None))
+    assert report_of(conn, claimed.job.id).sends == {}
+
+
+def test_manual_sends_are_cleared_by_a_replay_that_overwrites(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = succeeded_job(conn, clock, settings)
+    record_send(conn, clock, job.id, 0, None)
+    store.replay_job(conn, now=clock(), job_id=job.id, options=overwrite())
+    assert report_of(conn, job.id).sends == {}
 
 
 def test_resend_report_rejects_job_without_reports(

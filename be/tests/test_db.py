@@ -77,6 +77,16 @@ def test_init_schema_adds_replay_columns_to_old_tables(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_init_schema_adds_report_sends_column_to_old_tables(tmp_path: Path) -> None:
+    conn = connect(str(tmp_path / "old.db"))
+    conn.executescript(SCHEMA.replace("  report_sends   TEXT,\n", ""))
+    conn.execute(INSERT_JOB, ("pending", None, None, None, None))
+    init_schema(conn)
+    init_schema(conn)
+    assert conn.execute("SELECT report_sends FROM jobs").fetchone()[0] is None
+    conn.close()
+
+
 def test_transaction_rolls_back_on_error(conn: sqlite3.Connection) -> None:
     with pytest.raises(RuntimeError), transaction(conn):  # noqa: PT012
         conn.execute(INSERT_JOB, ("pending", None, None, None, None))

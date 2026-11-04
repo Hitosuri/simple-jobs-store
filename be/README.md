@@ -145,8 +145,11 @@ Used by the control room. Failures use the usual error envelope.
   hold the old values.
 - **Send report** (`success` or `failed` job whose `reportStatus` is `success` or `failed` and
   that has a method at `index`, else `JOB_NOT_REPORTABLE` 409): POSTs the report once to that
-  method while the request waits, no retry. `reportStatus` becomes `success`, or `failed` with
-  `reportError`; `reportCursor` = `index`. The job itself is not touched.
+  method while the request waits, no retry. The outcome is kept as that method's entry in
+  `reportSends` (`{at, error}`, `error` null when delivered; the last send per method wins);
+  `reportStatus`, `reportRound`, `reportCursor` and `reportError` keep describing the automatic
+  delivery. `reportSends` is cleared when the report restarts (job finishes again, retry, replay
+  with `overwrite`). The job itself is not touched.
 - **Priority** (`pending` only, else `JOB_NOT_PENDING` 409): changes `priority`.
 - **Delete** (finished jobs only, else `JOB_NOT_FINISHED` 409): removes the job and its attempts. If its report is still `pending` or
   `reporting`, that report is dropped and the provider never receives it.

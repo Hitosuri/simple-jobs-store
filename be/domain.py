@@ -2,7 +2,7 @@
 
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar, Literal, NewType, Self
@@ -149,9 +149,21 @@ class ReplayOptions(BaseModel):
         return self
 
 
+class ManualSend(BaseModel):
+    """Outcome of one operator send of a report to one method; `error` is None when delivered."""
+
+    model_config = ConfigDict(frozen=True)
+
+    at: EpochMs
+    error: str | None
+
+
 @dataclass(frozen=True, slots=True)
 class Report:
-    """A job's report methods and their delivery state; `status` is None until it finishes."""
+    """A job's report methods and their delivery state; `status` is None until it finishes.
+
+    `sends` holds the last operator send per method index, apart from the automatic delivery.
+    """
 
     methods: list[ReportMethod]
     status: ReportStatus | None
@@ -159,6 +171,7 @@ class Report:
     cursor: int
     next_at: EpochMs | None
     error: str | None
+    sends: dict[int, ManualSend] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

@@ -546,11 +546,9 @@ def test_api_send_report_sends_once_to_the_chosen_url(
     assert resp.status_code == 200
     assert [(url, body["id"]) for url, body in sent] == [("https://b.example/hook", job_id)]
     data = resp.json()["data"]
-    assert (data["reportStatus"], data["reportCursor"], data["reportError"]) == (
-        "failed",
-        1,
-        "HTTP 500",
-    )
+    assert (data["reportStatus"], data["reportCursor"], data["reportError"]) == ("success", 0, None)
+    assert data["reportSends"] == [None, {"at": START_ISO, "error": "HTTP 500"}]
+    assert create(client)["reportSends"] is None
 
 
 def test_api_send_report_409_while_delivering(client: TestClient) -> None:

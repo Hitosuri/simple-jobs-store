@@ -203,20 +203,12 @@ def send_report(
     job_id: JobIdPath, index: int, conn: ConnDep, now: NowDep, settings: SettingsDep
 ) -> ApiOk[JobOut]:
     """Send an ended job's report once to the method at `index`; no retry on failure."""
-    task = store.resend_report(conn, now=now, settings=settings, job_id=JobId(job_id), index=index)
-    body = ReportBody.build(task.job).model_dump(mode="json", by_alias=True)
+    job, method = store.resend_report(conn, job_id=JobId(job_id), index=index)
+    body = ReportBody.build(job).model_dump(mode="json", by_alias=True)
     with httpx2.Client(timeout=settings.report_timeout_ms / 1000) as client:
-        error = reports.send(client, task.method, body)
-    store.record_report(
-        conn,
-        now=now,
-        settings=settings,
-        job_id=task.job.id,
-        token=task.token,
-        error=error,
-        retry=False,
-    )
-    job, _ = store.get_job(conn, job_id=task.job.id)
+        error = reports.send(client, method, body)
+    store.record_manual_send(conn, now=now, job_id=job.id, index=index, error=error)
+    job, _ = store.get_job(conn, job_id=job.id)
     return ApiOk[JobOut](data=JobOut.build(job))
 
 
