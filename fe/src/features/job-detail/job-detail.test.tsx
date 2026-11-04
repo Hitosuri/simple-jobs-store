@@ -11,7 +11,14 @@ vi.mock('@/api/queries', () => ({
 }));
 vi.mock('@/api/mutations', () => {
   const idle = () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() });
-  return { useCancelJob: idle, useRetryJob: idle, useReplayJob: idle, useSetPriority: idle, useDeleteJob: idle };
+  return {
+    useCancelJob: idle,
+    useRetryJob: idle,
+    useReplayJob: idle,
+    useSendReport: idle,
+    useSetPriority: idle,
+    useDeleteJob: idle,
+  };
 });
 
 const failedJob = {
@@ -187,6 +194,26 @@ describe('DetailBody', () => {
       useJob.mockReturnValue({ data: { job: succeeded, attempts: [firstRun] }, isError: false });
       const html = render('8');
       expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>).)*Replay<\/button>/s);
+    });
+
+    it.each([
+      ['failed', true],
+      ['success', true],
+      ['pending', false],
+      ['reporting', false],
+    ])('offers Send again on each callback url when the report is %s: %s', (reportStatus, offered) => {
+      const job = {
+        ...succeeded,
+        reports: [
+          { type: 'callback', config: { url: 'https://a.example/' } },
+          { type: 'callback', config: { url: 'https://b.example/' } },
+        ],
+        reportStatus,
+        reportNextAt: reportStatus === 'pending' || reportStatus === 'reporting' ? '2026-11-02T09:00:05Z' : null,
+      };
+      useJob.mockReturnValue({ data: { job, attempts: [firstRun] }, isError: false });
+      const buttons = render('8').match(/<button[^>]*>(?:(?!<\/button>).)*Send again<\/button>/gs) ?? [];
+      expect(buttons).toHaveLength(offered ? 2 : 0);
     });
 
     it('while replaying, hides the old result and finish time and marks the job and the attempt', () => {

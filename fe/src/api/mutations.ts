@@ -48,6 +48,12 @@ export const useReplayJob = () =>
     ({ id }) => id,
   );
 
+export const useSendReport = () =>
+  useJobMutation(
+    ({ id, index }: { id: number; index: number }) => api<Job>(`/jobs/${id}/reports/${index}/send`, { method: 'POST' }),
+    ({ id }) => id,
+  );
+
 export const useSetPriority = () =>
   useJobMutation(
     ({ id, priority }: { id: number; priority: number }) =>
