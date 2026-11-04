@@ -164,9 +164,11 @@ If B works, it stops at the second send (~10 s): `reportStatus` = `success`.
 | `success` | A method answered 2xx |
 | `failed` | All passes failed; `reportError` holds the last failure (e.g. `HTTP 500`, `ConnectTimeout: ...`) |
 
-There is no endpoint to resend. If `reportStatus` is `failed`, read the job with
-`GET /jobs/{jobId}` instead (before retention deletes it). Don't create the job again to get a
-new callback: that runs the work again.
+If `reportStatus` is `failed`, read the job with `GET /jobs/{jobId}` instead (before retention
+deletes it), or once your endpoint is back, ask an operator to press "Send again" on that URL in
+the control room (`POST /jobs/{jobId}/reports/{index}/send`): one send to that one URL, no retry.
+It also works after `success`, e.g. if you lost what you received. Don't create the job again to
+get a new callback: that runs the work again.
 
 An operator can requeue a `failed` or `cancelled` job. It then runs again under the same id, and
 when it finishes you get a new report for that id (`reportStatus` is reset), even if you had

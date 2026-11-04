@@ -4,8 +4,10 @@ import logging
 from datetime import datetime
 from typing import Annotated, cast
 
+import httpx2
 from fastapi import APIRouter, Depends, Path, Query, status
 
+import reports
 import store
 from api.deps import ConnDep, NowDep, PageDep, SettingsDep
 from api.envelope import ApiOk
@@ -27,6 +29,7 @@ from api.schemas import (
     LeaseBody,
     Page,
     ReplayChoices,
+    ReportBody,
     epoch_ms,
 )
 from domain import (
@@ -192,6 +195,28 @@ def retry_job(job_id: JobIdPath, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
 def replay_job(job_id: JobIdPath, body: ReplayChoices, conn: ConnDep, now: NowDep) -> ApiOk[JobOut]:
     """Run a success job once more in place."""
     job = store.replay_job(conn, now=now, job_id=JobId(job_id), options=body.options())
+    return ApiOk[JobOut](data=JobOut.build(job))
+
+
+@router.post("/{job_id}/reports/{index}/send")
+def send_report(
+    job_id: JobIdPath, index: int, conn: ConnDep, now: NowDep, settings: SettingsDep
+) -> ApiOk[JobOut]:
+    """Send an ended job's report once to the method at `index`; no retry on failure."""
+    task = store.resend_report(conn, now=now, settings=settings, job_id=JobId(job_id), index=index)
+    body = ReportBody.build(task.job).model_dump(mode="json", by_alias=True)
+    with httpx2.Client(timeout=settings.report_timeout_ms / 1000) as client:
+        error = reports.send(client, task.method, body)
+    store.record_report(
+        conn,
+        now=now,
+        settings=settings,
+        job_id=task.job.id,
+        token=task.token,
+        error=error,
+        retry=False,
+    )
+    job, _ = store.get_job(conn, job_id=task.job.id)
     return ApiOk[JobOut](data=JobOut.build(job))
 
 

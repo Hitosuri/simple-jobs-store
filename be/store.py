@@ -22,6 +22,7 @@ from domain import (
     JobNotFoundError,
     JobNotPendingError,
     JobNotReplayableError,
+    JobNotReportableError,
     JobNotRetryableError,
     JobQuery,
     JobSort,
@@ -1059,6 +1060,47 @@ def replay_job(
         return _load_job(conn, job_id)
 
 
+def resend_report(
+    conn: sqlite3.Connection, *, now: EpochMs, settings: Settings, job_id: JobId, index: int
+) -> ReportTask:
+    """Take one manual send of an ended job's report to the method at `index`.
+
+    The outcome goes back through `record_report` with `retry=False`.
+
+    Args:
+        conn: Store connection.
+        now: Store clock.
+        settings: Store settings (send timeout).
+        job_id: Job whose report to send.
+        index: Position of the method in the job's report list.
+
+    Returns:
+        The job, the chosen method and the send token.
+
+    Raises:
+        JobNotFoundError: No such job.
+        JobNotReportableError: Job is not success or failed, has no method at `index`, or its
+            report is still pending or sending.
+    """
+    with transaction(conn):
+        job = _load_job(conn, job_id)
+        report = job.report
+        if (
+            job.status not in {JobStatus.SUCCESS, JobStatus.FAILED}
+            or report is None
+            or report.status not in {ReportStatus.SUCCESS, ReportStatus.FAILED}
+            or not 0 <= index < len(report.methods)
+        ):
+            raise JobNotReportableError
+        token = EpochMs(now + settings.report_timeout_ms)
+        conn.execute(
+            "UPDATE jobs SET report_status = 'reporting', report_next_at = ?, report_cursor = ?"
+            " WHERE id = ?",
+            (token, index, job_id),
+        )
+        return ReportTask(job=job, method=report.methods[index], token=token)
+
+
 def set_priority(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId, priority: int) -> Job:
     """Change the priority of a pending job.
 
@@ -1211,8 +1253,9 @@ def record_report(
     job_id: JobId,
     token: EpochMs,
     error: str | None,
+    retry: bool = True,
 ) -> None:
-    """Store the outcome of a send taken by `take_due_report`.
+    """Store the outcome of a send taken by `take_due_report` or `resend_report`.
 
     Ignored when the report is no longer that send (job reclaimed, purged or re-finished).
 
@@ -1223,6 +1266,8 @@ def record_report(
         job_id: Reported job.
         token: `ReportTask.token` of the send.
         error: None when delivered, else why the send failed.
+        retry: On failure, move on to the next method (True) or stop at `failed` (False,
+            for a manual send).
     """
     with transaction(conn):
         row = _one(
@@ -1239,6 +1284,13 @@ def record_report(
                 "UPDATE jobs SET report_status = 'success', report_next_at = NULL,"
                 " report_error = NULL WHERE id = ?",
                 (job_id,),
+            )
+            return
+        if not retry:
+            conn.execute(
+                "UPDATE jobs SET report_status = 'failed', report_next_at = NULL,"
+                " report_error = ? WHERE id = ?",
+                (error, job_id),
             )
             return
         _advance_report(conn, now=now, settings=settings, job=_to_job(conn, row), error=error)

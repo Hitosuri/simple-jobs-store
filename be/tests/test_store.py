@@ -21,6 +21,7 @@ from domain import (
     JobNotFoundError,
     JobNotPendingError,
     JobNotReplayableError,
+    JobNotReportableError,
     JobNotRetryableError,
     JobQuery,
     JobSort,
@@ -1226,6 +1227,133 @@ def test_report_writes_leave_updated_at_alone(
     clock.advance(settings.report_backoff_base_ms)
     record(conn, clock, settings, taken(conn, clock, settings), None)
     assert store.get_job(conn, job_id=claimed.job.id)[0].updated_at == updated_at
+
+
+def give_up_report(conn: sqlite3.Connection, clock: FakeClock, settings: Settings) -> None:
+    for _ in range(len(HOOKS)):
+        clock.advance(settings.report_backoff_cap_ms)
+        record(conn, clock, settings, taken(conn, clock, settings), "HTTP 500")
+
+
+def resend(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, job_id: JobId, index: int
+) -> ReportTask:
+    return store.resend_report(conn, now=clock(), settings=settings, job_id=job_id, index=index)
+
+
+def record_resend(
+    conn: sqlite3.Connection,
+    clock: FakeClock,
+    settings: Settings,
+    task: ReportTask,
+    error: str | None,
+) -> None:
+    store.record_report(
+        conn,
+        now=clock(),
+        settings=settings,
+        job_id=task.job.id,
+        token=task.token,
+        error=error,
+        retry=False,
+    )
+
+
+@pytest.mark.parametrize("outcome", [SuccessReport(result=None), BOOM])
+def test_resend_report_sends_once_to_the_chosen_method(
+    conn: sqlite3.Connection,
+    clock: FakeClock,
+    settings: Settings,
+    outcome: SuccessReport | FailureReport,
+) -> None:
+    one_round = replace(settings, report_max_rounds=1)
+    claimed = finished_with_reports(conn, clock, one_round, outcome, max_attempt=1)
+    give_up_report(conn, clock, one_round)
+    task = resend(conn, clock, one_round, claimed.job.id, 1)
+    assert task.method == HOOKS[1]
+    assert task.token == clock.now + one_round.report_timeout_ms
+    report = report_of(conn, claimed.job.id)
+    assert (report.status, report.cursor, report.next_at) == (
+        ReportStatus.REPORTING,
+        1,
+        task.token,
+    )
+    record_resend(conn, clock, one_round, task, None)
+    report = report_of(conn, claimed.job.id)
+    assert (report.status, report.next_at, report.error) == (ReportStatus.SUCCESS, None, None)
+    assert take(conn, clock, one_round) is None
+
+
+def test_failed_resend_is_not_retried(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = succeeded_job(conn, clock, settings)
+    task = resend(conn, clock, settings, job.id, 0)
+    record_resend(conn, clock, settings, task, "HTTP 503")
+    report = report_of(conn, job.id)
+    assert (report.status, report.next_at, report.error) == (ReportStatus.FAILED, None, "HTTP 503")
+    assert (report.round, report.cursor) == (0, 0)
+    clock.advance(settings.report_backoff_cap_ms)
+    assert take(conn, clock, settings) is None
+
+
+def test_resend_report_leaves_job_fields_alone(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = succeeded_job(conn, clock, settings)
+    record_resend(conn, clock, settings, resend(conn, clock, settings, job.id, 0), None)
+    after = store.get_job(conn, job_id=job.id)[0]
+    assert (after.status, after.result, after.updated_at) == (
+        job.status,
+        job.result,
+        job.updated_at,
+    )
+
+
+def test_resend_report_rejects_job_without_reports(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    wid = add_worker(conn, clock, settings)
+    job = add_job(conn, clock, settings)
+    finish(conn, clock, settings, claim(conn, clock, settings, wid), SuccessReport(result=None))
+    with pytest.raises(JobNotReportableError):
+        resend(conn, clock, settings, job.id, 0)
+
+
+@pytest.mark.parametrize("index", [-1, len(HOOKS)])
+def test_resend_report_rejects_unknown_method(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, index: int
+) -> None:
+    job = succeeded_job(conn, clock, settings)
+    with pytest.raises(JobNotReportableError):
+        resend(conn, clock, settings, job.id, index)
+
+
+@pytest.mark.parametrize("busy", ["pending", "reporting"])
+def test_resend_report_rejects_report_still_being_delivered(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings, busy: str
+) -> None:
+    claimed = finished_with_reports(conn, clock, settings, SuccessReport(result=None))
+    if busy == "reporting":
+        taken(conn, clock, settings)
+    with pytest.raises(JobNotReportableError):
+        resend(conn, clock, settings, claimed.job.id, 0)
+
+
+def test_resend_report_rejects_job_that_is_replaying(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    job = succeeded_job(conn, clock, settings)
+    store.replay_job(conn, now=clock(), job_id=job.id, options=KEEP)
+    with pytest.raises(JobNotReportableError):
+        resend(conn, clock, settings, job.id, 0)
+
+
+def test_resend_report_unknown_job_raises(
+    conn: sqlite3.Connection, clock: FakeClock, settings: Settings
+) -> None:
+    with pytest.raises(JobNotFoundError):
+        resend(conn, clock, settings, JobId(999), 0)
 
 
 def test_retry_failed_job_requeues_in_place_with_fresh_budget(

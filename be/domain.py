@@ -68,6 +68,7 @@ class ErrorCode(StrEnum):
     JOB_ALREADY_FINISHED = "JOB_ALREADY_FINISHED"
     JOB_NOT_RETRYABLE = "JOB_NOT_RETRYABLE"
     JOB_NOT_REPLAYABLE = "JOB_NOT_REPLAYABLE"
+    JOB_NOT_REPORTABLE = "JOB_NOT_REPORTABLE"
     JOB_NOT_PENDING = "JOB_NOT_PENDING"
     JOB_NOT_FINISHED = "JOB_NOT_FINISHED"
     WORKER_CONNECTED = "WORKER_CONNECTED"
@@ -341,6 +342,13 @@ class JobNotReplayableError(StoreError):
 
     code = ErrorCode.JOB_NOT_REPLAYABLE
     message = "job is not success or its report is still being delivered"
+
+
+class JobNotReportableError(StoreError):
+    """Only an ended job whose report has stopped (delivered or given up) can be resent."""
+
+    code = ErrorCode.JOB_NOT_REPORTABLE
+    message = "job has no ended report to resend"
 
 
 class JobNotPendingError(StoreError):

@@ -108,6 +108,7 @@ The cleaner deletes `success` / `failed` / `cancelled` jobs whose `finishedAt` i
 | `POST /api/jobs/{id}/cancel` | - | job |
 | `POST /api/jobs/{id}/retry` | - | job (§7.1) |
 | `POST /api/jobs/{id}/replay` | `overwrite`, `reportSuccess`, `reportFailed` (all bool; reports need `overwrite`, else 422) | job (§7.1) |
+| `POST /api/jobs/{id}/reports/{index}/send` | - (`index` = 0-based position in `reports`) | job after the send (§7.1) |
 | `PATCH /api/jobs/{id}` | `priority` (int32) | job (§7.1) |
 | `DELETE /api/jobs/{id}` | - | `null` (§7.1) |
 | `POST /api/jobs/bulk` | `action` (`cancel`, `retry`, `delete`, `priority`), `ids` (1..1000, each 1..2^63-1), `priority` (only for `priority`) | `{done: [id], skipped: [{id, code}]}` |
@@ -142,6 +143,10 @@ Used by the control room. Failures use the usual error envelope.
   (`result` is `null` on failure or cancel), and the provider is reported only if `reportSuccess`
   / `reportFailed` matches that outcome. While pending or running, `result` and `finishedAt` still
   hold the old values.
+- **Send report** (`success` or `failed` job whose `reportStatus` is `success` or `failed` and
+  that has a method at `index`, else `JOB_NOT_REPORTABLE` 409): POSTs the report once to that
+  method while the request waits, no retry. `reportStatus` becomes `success`, or `failed` with
+  `reportError`; `reportCursor` = `index`. The job itself is not touched.
 - **Priority** (`pending` only, else `JOB_NOT_PENDING` 409): changes `priority`.
 - **Delete** (finished jobs only, else `JOB_NOT_FINISHED` 409): removes the job and its attempts. If its report is still `pending` or
   `reporting`, that report is dropped and the provider never receives it.

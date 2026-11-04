@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+import reports
 import store
 from api.schemas import ReportBody
 from domain import JobId, Settings
@@ -507,6 +508,56 @@ def test_api_replay_reports_without_overwrite_is_422(client: TestClient) -> None
     job_id = create(client)["id"]
     body = {**REPLAY_KEEP, "reportFailed": True}
     assert client.post(f"/api/jobs/{job_id}/replay", json=body).status_code == 422
+
+
+BACKUP = {"type": "callback", "config": {"url": "https://b.example/hook"}}
+
+
+def finished_with_report_pending(client: TestClient) -> int:
+    register(client)
+    job_id = create(client, reports=[HOOK, BACKUP])["id"]
+    assert isinstance(job_id, int)
+    first = claim(client)
+    client.post(f"/api/jobs/{job_id}/finish", json={**lease_body(first), "status": "success"})
+    return job_id
+
+
+def test_api_send_report_sends_once_to_the_chosen_url(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    clock: FakeClock,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = finished_with_report_pending(client)
+    task = store.take_due_report(conn, now=clock(), settings=settings)
+    assert task is not None
+    store.record_report(
+        conn, now=clock(), settings=settings, job_id=task.job.id, token=task.token, error=None
+    )
+    sent: list[tuple[str, Any]] = []
+
+    def fake_send(_client: Any, method: Any, body: Any) -> str:
+        sent.append((str(method.config.url), body))
+        return "HTTP 500"
+
+    monkeypatch.setattr(reports, "send", fake_send)
+    resp = client.post(f"/api/jobs/{job_id}/reports/1/send")
+    assert resp.status_code == 200
+    assert [(url, body["id"]) for url, body in sent] == [("https://b.example/hook", job_id)]
+    data = resp.json()["data"]
+    assert (data["reportStatus"], data["reportCursor"], data["reportError"]) == (
+        "failed",
+        1,
+        "HTTP 500",
+    )
+
+
+def test_api_send_report_409_while_delivering(client: TestClient) -> None:
+    job_id = finished_with_report_pending(client)
+    resp = client.post(f"/api/jobs/{job_id}/reports/0/send")
+    assert resp.status_code == 409
+    assert error_code(resp) == "JOB_NOT_REPORTABLE"
 
 
 def test_api_patch_priority_and_409_when_not_pending(client: TestClient) -> None:
