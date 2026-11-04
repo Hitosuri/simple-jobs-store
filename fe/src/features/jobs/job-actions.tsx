@@ -195,7 +195,7 @@ export function JobActions({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-3 text-sm">
-            <label className="flex items-start gap-2">
+            <label className="flex cursor-pointer items-start gap-2">
               <Checkbox
                 className="mt-0.5"
                 checked={choices.overwrite}
@@ -212,7 +212,7 @@ export function JobActions({
             </label>
             {job.reports && (
               <>
-                <label className="flex items-center gap-2 has-disabled:text-muted-foreground">
+                <label className="flex cursor-pointer items-center gap-2 has-disabled:cursor-not-allowed has-disabled:text-muted-foreground">
                   <Checkbox
                     disabled={!choices.overwrite}
                     checked={choices.reportSuccess}
@@ -220,7 +220,7 @@ export function JobActions({
                   />
                   Send callback if it succeeds
                 </label>
-                <label className="flex items-center gap-2 has-disabled:text-muted-foreground">
+                <label className="flex cursor-pointer items-center gap-2 has-disabled:cursor-not-allowed has-disabled:text-muted-foreground">
                   <Checkbox
                     disabled={!choices.overwrite}
                     checked={choices.reportFailed}
@@ -228,6 +228,11 @@ export function JobActions({
                   />
                   Send callback if it fails
                 </label>
+                {!choices.overwrite && (
+                  <p className="-mt-1 text-xs text-muted-foreground">
+                    Callbacks send the stored result, so they need Overwrite.
+                  </p>
+                )}
               </>
             )}
           </div>
