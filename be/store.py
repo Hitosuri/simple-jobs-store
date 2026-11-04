@@ -596,7 +596,13 @@ def _restore_success(conn: sqlite3.Connection, *, now: EpochMs, job_id: JobId) -
     conn.execute(
         """
         UPDATE jobs SET status = 'success', worker_id = NULL, lease_token = NULL,
-                        lease_until = NULL, error = NULL, error_detail = NULL, updated_at = :now
+                        lease_until = NULL, error = NULL, error_detail = NULL, updated_at = :now,
+                        started_at = COALESCE((
+                            SELECT a.started_at FROM job_attempts a
+                            WHERE a.job_id = jobs.id AND a.outcome = 'succeeded'
+                              AND a.ended_at = jobs.finished_at
+                            ORDER BY a.attempt_no DESC LIMIT 1
+                        ), started_at)
         WHERE id = :id
         """,
         {"now": now, "id": job_id},

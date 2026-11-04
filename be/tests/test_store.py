@@ -1402,6 +1402,7 @@ def test_replay_without_overwrite_restores_the_old_success(
     after = finish(conn, clock, settings, claimed, outcome)
     assert after.status is JobStatus.SUCCESS
     assert (after.result, after.finished_at) == (before.result, before.finished_at)
+    assert after.started_at == before.started_at
     assert (after.error, after.error_detail, after.lease) == (None, None, None)
     assert after.report == before.report
 
