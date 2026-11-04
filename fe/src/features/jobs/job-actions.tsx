@@ -15,6 +15,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -186,14 +195,12 @@ export function JobActions({
         onConfirm={() => cancel.mutate(job.id)}
       />
 
-      <AlertDialog open={dialog === 'replay'} onOpenChange={(o) => !o && setDialog(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Replay job #{job.id}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              It runs once more on the next free worker, with no retry if it fails.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+      <Dialog open={dialog === 'replay'} onOpenChange={(o) => !o && setDialog(null)}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Replay job #{job.id}?</DialogTitle>
+            <DialogDescription>It runs once more on the next free worker, with no retry if it fails.</DialogDescription>
+          </DialogHeader>
           <div className="flex flex-col gap-3 text-sm">
             <label className="flex cursor-pointer items-start gap-2">
               <Checkbox
@@ -236,14 +243,14 @@ export function JobActions({
               </>
             )}
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => replay.mutate({ id: job.id, choices })}>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+            <DialogClose render={<Button />} onClick={() => replay.mutate({ id: job.id, choices })}>
               Replay #{job.id}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={dialog === 'priority'} onOpenChange={(o) => !o && setDialog(null)}>
         <AlertDialogContent>

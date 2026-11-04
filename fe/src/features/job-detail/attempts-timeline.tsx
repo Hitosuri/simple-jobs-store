@@ -52,11 +52,8 @@ export function AttemptsTimeline({
         <ol className="relative flex flex-col gap-3 pl-5 text-[13px] before:absolute before:top-1.5 before:bottom-1.5 before:left-[7px] before:w-0.5 before:bg-border">
           {items.map((item) =>
             item.kind === 'requeue' ? (
-              <li
-                key="requeue"
-                className="relative flex items-center gap-1.5 text-xs text-muted-foreground before:absolute before:top-1.5 before:-left-[18px] before:size-3 before:rounded-full before:border-2 before:border-muted-foreground before:bg-card"
-              >
-                <RotateCcw aria-hidden className="size-3" />
+              <li key="requeue" className="relative flex items-center gap-1 text-xs text-muted-foreground">
+                <RotateCcw aria-hidden className="absolute top-0.5 -left-[18px] size-3 bg-card" />
                 Requeued <span className="tabular-nums">{formatClock(item.at)}</span>
               </li>
             ) : (
