@@ -69,7 +69,7 @@ function Loaded({ data, onClose }: { data: JobDetailData; onClose: () => void })
         {job.progress && job.progress.length > 0 && <ProgressCard steps={job.progress} jobStatus={job.status} />}
         <AttemptsTimeline items={items} aside={`${attemptsShown(job)} of ${job.maxAttempt}`} workerLabels={labels} />
         <JsonBlock title="Description" value={job.description} />
-        {job.result !== null && <JsonBlock title="Result" value={job.result} />}
+        {job.result !== null && job.status === 'success' && <JsonBlock title="Result" value={job.result} />}
         {!errorFirst && errorBlock}
         <ReportCard job={job} now={now} />
       </div>

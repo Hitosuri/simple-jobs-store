@@ -10,6 +10,7 @@ const at = (n: number, startedAt: string, endedAt: string | null, outcome: Attem
   errorDetail: null,
   startedAt,
   endedAt,
+  replay: false,
 });
 
 const a1 = at(1, '2026-01-01T10:00:00Z', '2026-01-01T10:08:00Z', 'lease_expired');

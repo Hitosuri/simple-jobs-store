@@ -1,4 +1,4 @@
-import { Ban, CircleCheck, CircleX, Clock, LoaderCircle, TimerOff, Undo2, type LucideIcon } from 'lucide-react';
+import { Ban, CircleCheck, CircleX, Clock, LoaderCircle, Repeat, TimerOff, Undo2, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { AttemptOutcome, JobStatus } from '@/api/types';
 
@@ -23,6 +23,16 @@ export function statusLabel(status: JobStatus | AttemptOutcome): string {
 /** Label for text that may be a raw status or outcome (the store reports `lease_expired` as an error). */
 export function labelIfStatus(text: string): string {
   return Object.hasOwn(LOOK, text) ? LOOK[text as JobStatus | AttemptOutcome].label : text;
+}
+
+/** Marks a job or attempt started by an operator replay. */
+export function ReplayBadge() {
+  return (
+    <Badge variant="outline">
+      <Repeat aria-hidden />
+      Replay
+    </Badge>
+  );
 }
 
 export function StatusBadge({ status }: { status: JobStatus | AttemptOutcome }) {

@@ -12,8 +12,8 @@ describe('primaryAction', () => {
     expect(primaryAction({ status: 'running' })).toBe('cancel');
   });
 
-  it('is none for a succeeded job', () => {
-    expect(primaryAction({ status: 'success' })).toBeNull();
+  it('is Replay for a succeeded job', () => {
+    expect(primaryAction({ status: 'success' })).toBe('replay');
   });
 });
 

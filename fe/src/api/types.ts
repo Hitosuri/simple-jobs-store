@@ -99,6 +99,13 @@ export interface Job {
   requeuedAt: string | null;
   attemptsUsed: number;
   lastWorkerId: string | null;
+  replay: ReplayChoices | null;
+}
+
+export interface ReplayChoices {
+  overwrite: boolean;
+  reportSuccess: boolean;
+  reportFailed: boolean;
 }
 
 export interface Attempt {
@@ -109,6 +116,7 @@ export interface Attempt {
   errorDetail: string | null;
   startedAt: string;
   endedAt: string | null;
+  replay: boolean;
 }
 
 export interface JobDetail {

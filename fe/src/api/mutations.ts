@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from './client';
-import type { BulkAction, BulkResult, Job } from './types';
+import type { BulkAction, BulkResult, Job, ReplayChoices } from './types';
 
 const post = (body: unknown): RequestInit => ({
   method: 'POST',
@@ -40,6 +40,12 @@ export const useRetryJob = () =>
   useJobMutation(
     (id: number) => api<Job>(`/jobs/${id}/retry`, { method: 'POST' }),
     (id) => id,
+  );
+
+export const useReplayJob = () =>
+  useJobMutation(
+    ({ id, choices }: { id: number; choices: ReplayChoices }) => api<Job>(`/jobs/${id}/replay`, post(choices)),
+    ({ id }) => id,
   );
 
 export const useSetPriority = () =>

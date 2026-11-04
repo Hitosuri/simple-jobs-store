@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react';
-import { Ban, Ellipsis, ListOrdered, RotateCcw, Trash2 } from 'lucide-react';
-import { useCancelJob, useDeleteJob, useRetryJob, useSetPriority } from '@/api/mutations';
-import type { BulkAction, Job } from '@/api/types';
+import { Ban, Ellipsis, ListOrdered, Repeat, RotateCcw, Trash2 } from 'lucide-react';
+import { useCancelJob, useDeleteJob, useReplayJob, useRetryJob, useSetPriority } from '@/api/mutations';
+import type { BulkAction, Job, ReplayChoices } from '@/api/types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,17 +30,23 @@ import { can } from './eligibility';
 
 const INT32 = 2 ** 31;
 
-const META: Record<BulkAction, { label: string; icon: ReactNode }> = {
+type JobAction = BulkAction | 'replay';
+
+const META: Record<JobAction, { label: string; icon: ReactNode }> = {
   retry: { label: 'Retry', icon: <RotateCcw /> },
+  replay: { label: 'Replay', icon: <Repeat /> },
   cancel: { label: 'Cancel', icon: <Ban /> },
   priority: { label: 'Priority', icon: <ListOrdered /> },
   delete: { label: 'Delete', icon: <Trash2 /> },
 };
 
+const NO_REPLAY_CHOICES: ReplayChoices = { overwrite: false, reportSuccess: false, reportFailed: false };
+
 /** The action a job in this state most likely needs, shown as the visible button. */
-export function primaryAction(job: Pick<Job, 'status'>): BulkAction | null {
+export function primaryAction(job: Pick<Job, 'status'>): JobAction | null {
   if (can('retry', job.status)) return 'retry';
   if (can('cancel', job.status)) return 'cancel';
+  if (job.status === 'success') return 'replay';
   return null;
 }
 
@@ -64,23 +71,28 @@ export function JobActions({
 }) {
   const cancel = useCancelJob();
   const retry = useRetryJob();
+  const replay = useReplayJob();
   const setPriority = useSetPriority();
   const del = useDeleteJob();
-  const [dialog, setDialog] = useState<'cancel' | 'delete' | 'priority' | null>(null);
+  const [dialog, setDialog] = useState<'cancel' | 'delete' | 'priority' | 'replay' | null>(null);
   const [priority, setPriorityText] = useState(String(job.priority));
   const parsed = Number(priority);
   const priorityValid = priority.trim() !== '' && Number.isInteger(parsed) && Math.abs(parsed) < INT32;
+  const [choices, setChoices] = useState(NO_REPLAY_CHOICES);
 
   const primary = primaryAction(job);
   const rest = secondaryActions(job);
-  const busy = cancel.isPending || retry.isPending || setPriority.isPending || del.isPending;
+  const busy = cancel.isPending || retry.isPending || replay.isPending || setPriority.isPending || del.isPending;
   const row = variant === 'row';
 
-  function run(action: BulkAction) {
+  function run(action: JobAction) {
     if (action === 'retry') retry.mutate(job.id);
     else if (action === 'priority') {
       setPriorityText(String(job.priority));
       setDialog('priority');
+    } else if (action === 'replay') {
+      setChoices(NO_REPLAY_CHOICES);
+      setDialog('replay');
     } else setDialog(action);
   }
 
@@ -173,6 +185,60 @@ export function JobActions({
         onOpenChange={(o) => !o && setDialog(null)}
         onConfirm={() => cancel.mutate(job.id)}
       />
+
+      <AlertDialog open={dialog === 'replay'} onOpenChange={(o) => !o && setDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Replay job #{job.id}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It runs once more on the next free worker, with no retry if it fails.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-3 text-sm">
+            <label className="flex items-start gap-2">
+              <Checkbox
+                className="mt-0.5"
+                checked={choices.overwrite}
+                onCheckedChange={(on) => setChoices(on ? { ...choices, overwrite: true } : NO_REPLAY_CHOICES)}
+              />
+              <span>
+                Overwrite the result
+                <span className="block text-xs text-muted-foreground">
+                  {choices.overwrite
+                    ? 'The job ends with whatever the replay returns, failure included.'
+                    : 'The job keeps its current result. The replay outcome shows only in Attempts.'}
+                </span>
+              </span>
+            </label>
+            {job.reports && (
+              <>
+                <label className="flex items-center gap-2 has-disabled:text-muted-foreground">
+                  <Checkbox
+                    disabled={!choices.overwrite}
+                    checked={choices.reportSuccess}
+                    onCheckedChange={(on) => setChoices({ ...choices, reportSuccess: on })}
+                  />
+                  Send callback if it succeeds
+                </label>
+                <label className="flex items-center gap-2 has-disabled:text-muted-foreground">
+                  <Checkbox
+                    disabled={!choices.overwrite}
+                    checked={choices.reportFailed}
+                    onCheckedChange={(on) => setChoices({ ...choices, reportFailed: on })}
+                  />
+                  Send callback if it fails
+                </label>
+              </>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => replay.mutate({ id: job.id, choices })}>
+              Replay #{job.id}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={dialog === 'priority'} onOpenChange={(o) => !o && setDialog(null)}>
         <AlertDialogContent>

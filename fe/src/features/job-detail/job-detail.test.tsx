@@ -11,7 +11,7 @@ vi.mock('@/api/queries', () => ({
 }));
 vi.mock('@/api/mutations', () => {
   const idle = () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() });
-  return { useCancelJob: idle, useRetryJob: idle, useSetPriority: idle, useDeleteJob: idle };
+  return { useCancelJob: idle, useRetryJob: idle, useReplayJob: idle, useSetPriority: idle, useDeleteJob: idle };
 });
 
 const failedJob = {
@@ -44,6 +44,7 @@ const failedJob = {
   requeuedAt: null,
   attemptsUsed: 3,
   lastWorkerId: 'batch-02',
+  replay: null,
 };
 
 const render = (jobId = '999999') => renderToString(<DetailBody jobId={jobId} onClose={() => {}} />);
@@ -159,6 +160,49 @@ describe('DetailBody', () => {
       const html = renderRetry();
       expect(html).toContain('>Callback<');
       expect(html).toContain('Sent when the job finishes');
+    });
+  });
+
+  describe('succeeded job', () => {
+    const succeeded = {
+      ...failedJob,
+      status: 'success',
+      error: null,
+      errorDetail: null,
+      result: { rows: 42 },
+      progress: null,
+    };
+    const firstRun = {
+      attemptNo: 1,
+      workerId: 'batch-02',
+      outcome: 'succeeded',
+      error: null,
+      errorDetail: null,
+      startedAt: '2026-11-02T09:00:01Z',
+      endedAt: '2026-11-02T09:00:04Z',
+      replay: false,
+    };
+
+    it('makes Replay the primary action', () => {
+      useJob.mockReturnValue({ data: { job: succeeded, attempts: [firstRun] }, isError: false });
+      const html = render('8');
+      expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>).)*Replay<\/button>/s);
+    });
+
+    it('while replaying, hides the old result and finish time and marks the job and the attempt', () => {
+      const job = {
+        ...succeeded,
+        status: 'running',
+        replay: { overwrite: false, reportSuccess: false, reportFailed: false },
+        requeuedAt: '2026-11-02T10:00:00Z',
+        startedAt: '2026-11-02T10:00:01Z',
+      };
+      const rerun = { ...firstRun, attemptNo: 2, outcome: null, endedAt: null, replay: true };
+      useJob.mockReturnValue({ data: { job, attempts: [firstRun, rerun] }, isError: false });
+      const html = render('8');
+      expect(html).not.toContain('>Finished<');
+      expect(html).not.toContain('>Result<');
+      expect(html.match(/>Replay</g)).toHaveLength(2);
     });
   });
 });

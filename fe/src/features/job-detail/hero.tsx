@@ -1,5 +1,5 @@
 import type { Job, JobStatus } from '@/api/types';
-import { StatusBadge } from '@/components/status-badge';
+import { ReplayBadge, StatusBadge } from '@/components/status-badge';
 import { elapsedTone, toneClass } from '@/features/overview/thresholds';
 import { formatDuration } from '@/lib/format';
 import { typeColorVar } from '@/lib/type-color';
@@ -43,7 +43,8 @@ export function Hero({
           <span aria-hidden className="mt-1 h-4 w-1 shrink-0 rounded-[1px] bg-current" />
           <span className="min-w-0 break-all text-foreground">{job.type}</span>
         </span>
-        <span className="ml-auto shrink-0">
+        <span className="ml-auto flex shrink-0 gap-1">
+          {job.replay && <ReplayBadge />}
           <StatusBadge status={job.status} />
         </span>
       </div>

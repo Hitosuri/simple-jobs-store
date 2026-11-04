@@ -13,6 +13,7 @@ const attempt = (n: number, outcome: Attempt['outcome'], error: string | null = 
   errorDetail: null,
   startedAt: iso(12, n),
   endedAt: iso(12, n, 30),
+  replay: false,
 });
 
 describe('heroElapsed', () => {

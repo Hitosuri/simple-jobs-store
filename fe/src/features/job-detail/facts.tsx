@@ -30,7 +30,9 @@ export function Facts({ job, now }: { job: Job; now: number }) {
           note={job.status === 'pending' ? null : spanText('queued for', job.availableAt, job.startedAt)}
         />
       )}
-      {job.finishedAt && <Row label="Finished" value={formatClock(job.finishedAt)} />}
+      {job.finishedAt && !running && job.status !== 'pending' && (
+        <Row label="Finished" value={formatClock(job.finishedAt)} />
+      )}
       {leaseMs !== null && (
         <Row
           label="Lease"

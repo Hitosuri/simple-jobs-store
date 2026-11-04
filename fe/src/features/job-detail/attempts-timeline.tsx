@@ -1,6 +1,6 @@
 import { RotateCcw } from 'lucide-react';
 import type { Attempt } from '@/api/types';
-import { StatusBadge } from '@/components/status-badge';
+import { ReplayBadge, StatusBadge } from '@/components/status-badge';
 import { formatClock, formatDuration } from '@/lib/format';
 import type { TimelineItem } from './timeline';
 
@@ -21,6 +21,7 @@ function AttemptRow({
           {workerLabel ?? attempt.workerId}
         </span>
         <StatusBadge status={attempt.outcome ?? 'running'} />
+        {attempt.replay && <ReplayBadge />}
       </div>
       <p className="text-xs text-muted-foreground tabular-nums">
         {formatClock(attempt.startedAt)}
