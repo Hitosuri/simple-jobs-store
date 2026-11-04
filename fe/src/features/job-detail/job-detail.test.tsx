@@ -212,8 +212,21 @@ describe('DetailBody', () => {
         reportNextAt: reportStatus === 'pending' || reportStatus === 'reporting' ? '2026-11-02T09:00:05Z' : null,
       };
       useJob.mockReturnValue({ data: { job, attempts: [firstRun] }, isError: false });
-      const buttons = render('8').match(/<button[^>]*>(?:(?!<\/button>).)*Send again<\/button>/gs) ?? [];
+      const buttons = render('8').match(/<button[^>]*aria-label="Send again to https:\/\/[ab]\.example\/"/g) ?? [];
       expect(buttons).toHaveLength(offered ? 2 : 0);
+    });
+
+    it('shows the last manual send under its callback url', () => {
+      const job = {
+        ...succeeded,
+        reports: [{ type: 'callback', config: { url: 'https://a.example/' } }],
+        reportStatus: 'success',
+        reportSends: [{ at: '2026-11-02T09:05:00Z', error: 'HTTP 500' }],
+      };
+      useJob.mockReturnValue({ data: { job, attempts: [firstRun] }, isError: false });
+      expect(render('8')).toMatch(
+        /text-muted-foreground[^>]*>Sent again [A-Z][a-z]{2} \d+, [\d:]+(?:<!-- -->)? · (?:<!-- -->)?<span class="text-bad">failed: HTTP 500</,
+      );
     });
 
     it('while replaying, hides the old result and finish time and marks the job and the attempt', () => {

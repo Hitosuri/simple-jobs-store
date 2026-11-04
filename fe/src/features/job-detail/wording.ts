@@ -44,48 +44,60 @@ export function retryNote(
   return { lead, next };
 }
 
+type Tone = 'ok' | 'bad' | 'run' | 'fg' | 'muted';
+
 export interface ReportLine {
   url: string;
   text: string;
-  tone: 'ok' | 'bad' | 'run' | 'fg' | 'muted';
+  tone: Tone;
+  /** The operator's last manual send to this target; it does not change `text`. */
+  sent: { at: string; outcome: string; tone: 'ok' | 'bad' } | null;
 }
 
 const times = (n: number) => (n === 1 ? 'once' : `${n} times`);
+const tries = (n: number) => (n === 1 ? '1 try' : `${n} tries`);
 
 /**
  * One plain status per callback target. The store keeps a single status for the whole list:
  * `reportCursor` is the target being tried, earlier targets failed in this round, and `reportRound`
- * counts full passes over the list that failed.
+ * counts full passes over the list that failed. Manual sends are kept per target in `reportSends`.
  */
 export function reportLines(
-  job: Pick<Job, 'reports' | 'reportStatus' | 'reportRound' | 'reportCursor' | 'reportNextAt'>,
+  job: Pick<Job, 'reports' | 'reportStatus' | 'reportRound' | 'reportCursor' | 'reportNextAt' | 'reportSends'>,
   now: number,
 ): ReportLine[] {
   const { reportStatus: status, reportRound: round, reportCursor: cursor } = job;
-  return (job.reports ?? []).map(({ config: { url } }, i): ReportLine => {
+  const automatic = (i: number): { text: string; tone: Tone } => {
     const failedTries = round + (i < cursor ? 1 : 0);
-    if (status === null) return { url, text: 'Sent when the job finishes', tone: 'muted' };
-    if (status === 'failed') return { url, text: `Gave up after ${failedTries} tries`, tone: 'bad' };
+    if (status === null) return { text: 'Sent when the job finishes', tone: 'muted' };
+    if (status === 'failed') return { text: `Gave up after ${tries(failedTries)}`, tone: 'bad' };
     if (i !== cursor) {
-      if (failedTries > 0) return { url, text: `Failed ${times(failedTries)}`, tone: 'muted' };
-      return { url, text: status === 'success' ? 'Not needed' : 'Not tried yet', tone: 'muted' };
+      if (failedTries > 0) return { text: `Failed ${times(failedTries)}`, tone: 'muted' };
+      return { text: status === 'success' ? 'Not needed' : 'Not tried yet', tone: 'muted' };
     }
-    if (status === 'success') return { url, text: 'Delivered', tone: 'ok' };
-    if (status === 'reporting') return { url, text: 'Sending now', tone: 'run' };
+    if (status === 'success') return { text: 'Delivered', tone: 'ok' };
+    if (status === 'reporting') return { text: 'Sending now', tone: 'run' };
     const at = job.reportNextAt;
     if (!at || Date.parse(at) <= now) {
-      return {
-        url,
-        text: failedTries === 0 ? 'Sending soon' : `Retrying soon (attempt ${failedTries + 1})`,
-        tone: 'fg',
-      };
+      return { text: failedTries === 0 ? 'Sending soon' : `Retrying soon (attempt ${failedTries + 1})`, tone: 'fg' };
     }
     const clock = formatClock(at);
     return {
-      url,
       text:
         failedTries === 0 ? `Waiting to send at ${clock}` : `Waiting to retry at ${clock} (attempt ${failedTries + 1})`,
       tone: 'fg',
+    };
+  };
+  return (job.reports ?? []).map(({ config: { url } }, i): ReportLine => {
+    const send = job.reportSends?.[i] ?? null;
+    return {
+      url,
+      ...automatic(i),
+      sent: send && {
+        at: `Sent again ${formatClock(send.at)}`,
+        outcome: send.error === null ? 'delivered' : `failed: ${send.error}`,
+        tone: send.error === null ? 'ok' : 'bad',
+      },
     };
   });
 }

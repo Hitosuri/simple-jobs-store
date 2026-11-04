@@ -93,6 +93,7 @@ describe('reportLines', () => {
     reportRound: 0,
     reportCursor: 0,
     reportNextAt: null,
+    reportSends: null,
     ...patch,
   });
   const texts = (patch: Partial<Job>) => reportLines(job(patch), now).map((l) => l.text);
@@ -139,6 +140,24 @@ describe('reportLines', () => {
       'Gave up after 3 tries',
       'Gave up after 3 tries',
     ]);
+    expect(texts({ reportStatus: 'failed', reportRound: 1 })).toEqual(['Gave up after 1 try', 'Gave up after 1 try']);
+  });
+
+  it('adds the last manual send per target beside the automatic status', () => {
+    const lines = reportLines(
+      job({
+        reportStatus: 'success',
+        reportSends: [null, { at: iso(12, 25), error: 'HTTP 500' }],
+      }),
+      now,
+    );
+    expect(lines.map((l) => l.text)).toEqual(['Delivered', 'Not needed']);
+    expect(lines.map((l) => l.sent)).toEqual([
+      null,
+      { at: 'Sent again Nov 3, 12:25:00', outcome: 'failed: HTTP 500', tone: 'bad' },
+    ]);
+    const ok = reportLines(job({ reportStatus: 'failed', reportSends: [{ at: iso(12, 25), error: null }, null] }), now);
+    expect(ok[0].sent).toEqual({ at: 'Sent again Nov 3, 12:25:00', outcome: 'delivered', tone: 'ok' });
   });
 });
 

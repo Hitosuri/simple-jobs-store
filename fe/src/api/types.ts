@@ -95,6 +95,8 @@ export interface Job {
   reportCursor: number;
   reportNextAt: string | null;
   reportError: string | null;
+  /** Last operator send per target, same order as `reports`; null where none was sent. */
+  reportSends: ({ at: string; error: string | null } | null)[] | null;
   progress: ProgressStep[] | null;
   requeuedAt: string | null;
   attemptsUsed: number;

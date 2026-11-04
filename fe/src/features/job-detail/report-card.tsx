@@ -1,7 +1,8 @@
-import { toast } from 'sonner';
+import { LoaderCircle, Send } from 'lucide-react';
 import { useSendReport } from '@/api/mutations';
 import type { Job } from '@/api/types';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { reportLines, type ReportLine } from './wording';
 
@@ -20,30 +21,41 @@ export function ReportCard({ job, now }: { job: Job; now: number }) {
   const canSend =
     (job.status === 'success' || job.status === 'failed') &&
     (job.reportStatus === 'success' || job.reportStatus === 'failed');
-  const sendTo = (index: number, url: string) =>
-    send.mutate(
-      { id: job.id, index },
-      {
-        onSuccess: (sent) =>
-          sent.reportStatus === 'success'
-            ? toast.success(`Delivered to ${url}`)
-            : toast.error(`Send to ${url} failed: ${sent.reportError}`),
-      },
-    );
+  const sending = send.isPending ? send.variables.index : null;
   return (
     <section className="rounded-lg border bg-card px-3 py-2.5 text-[13px]">
       <h3 className="mb-2 font-semibold">{lines.length > 1 ? 'Callbacks' : 'Callback'}</h3>
-      <ul className="flex flex-col gap-2">
+      <ul className="divide-y">
         {lines.map((line, i) => (
-          <li key={i} className="flex min-w-0 items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="break-all text-muted-foreground">{line.url}</p>
+          <li key={i} className="min-w-0 py-2 first:pt-0 last:pb-0">
+            <p className="break-all text-muted-foreground">{line.url}</p>
+            <div className="flex items-center justify-between gap-2">
               <p className={cn('tabular-nums', TONE[line.tone])}>{line.text}</p>
+              {canSend && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        disabled={sending !== null}
+                        aria-busy={sending === i}
+                        onClick={() => send.mutate({ id: job.id, index: i })}
+                        aria-label={`Send again to ${line.url}`}
+                        className="-my-1 shrink-0 text-muted-foreground hover:text-foreground max-md:-my-3 max-md:size-11"
+                      />
+                    }
+                  >
+                    {sending === i ? <LoaderCircle className="animate-spin" /> : <Send />}
+                  </TooltipTrigger>
+                  <TooltipContent>{sending === i ? 'Sending...' : 'Send again, once'}</TooltipContent>
+                </Tooltip>
+              )}
             </div>
-            {canSend && (
-              <Button variant="outline" size="xs" disabled={send.isPending} onClick={() => sendTo(i, line.url)}>
-                Send again
-              </Button>
+            {line.sent && (
+              <p className="text-xs break-words text-muted-foreground tabular-nums">
+                {line.sent.at} · <span className={TONE[line.sent.tone]}>{line.sent.outcome}</span>
+              </p>
             )}
           </li>
         ))}
